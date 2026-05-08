@@ -1,2 +1,57 @@
 # c_coding_upskilling_journey
-This is my repo to put together all that I am coding in C. My goal is to go through all of the basics and end up working on the linux kernel as close to the metal as possible. I would also like to have my RaspberryPi talk to my 6502 computer. Here I will eventually make drivers and learn skills to work on embedded systems in C. 
+
+This repository documents my journey learning low-level software development in C, from fundamentals all the way down to systems and embedded programming.
+
+The goal is not just to learn syntax, but to understand how computers actually work beneath the abstraction layers.
+
+Topics and projects in this repository will include:
+
+Core C programming fundamentals
+Memory management and pointers
+Data structures and algorithms
+Linux systems programming
+Embedded systems development
+Raspberry Pi and microcontroller interfacing
+Serial communication and hardware protocols
+Driver development
+6502 computer interfacing and tooling
+Low-level debugging and hardware interaction
+
+Long term goals:
+
+Contribute to Linux kernel development
+Build embedded tooling and device drivers in C
+Interface a Raspberry Pi with a custom 6502 computer
+Develop a deeper understanding of operating systems and computer architecture
+
+This repository is intentionally structured as a learning log. Some projects are small experiments, others are larger builds, but all represent forward progress toward becoming a stronger systems and embedded developer.
+
+Current areas of focus:
+
+CLI utilities in C
+Parsing and string handling
+Memory and pointer mechanics
+Linux filesystem and process fundamentals
+Embedded communication between systems
+
+Tools and platforms:
+
+Linux / WSL2
+GCC / Clang
+Raspberry Pi
+ESP32
+STM32
+Logic analyzers, oscilloscopes, and serial debugging tools
+
+The goal is simple:
+Keep building. Keep learning. Get closer to the metal.
+
+## 6502 Computer Project
+
+Custom PCB work for my 6502 computer project.
+
+### PCB Render
+![6502 PCB](6502/6502%20PCB.png)
+
+### Bus Buffering Concept
+![Buffering Diagram](6502/buffering.png)
