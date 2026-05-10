@@ -8,16 +8,16 @@ The goal is not just to learn syntax, but to understand how computers actually w
 <!-- CLOC-START -->
 ```text
 cloc stats (05/10/2026)
-github.com/AlDanial/cloc v 1.98  T=0.01 s (774.9 files/s, 40186.1 lines/s)
+github.com/AlDanial/cloc v 1.98  T=0.01 s (930.5 files/s, 49667.7 lines/s)
 -------------------------------------------------------------------------------
 Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
-C                                4             39             25            185
-Markdown                         1             18              2             41
+C                                5             47             34            218
+Markdown                         1             18              2             55
 YAML                             1             11              0             40
 Text                             1              0              0              2
 -------------------------------------------------------------------------------
-SUM:                             7             68             27            268
+SUM:                             8             76             36            315
 -------------------------------------------------------------------------------
 ```
 <!-- CLOC-END -->
