@@ -1,0 +1,51 @@
+name: Update cloc stats
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  cloc:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cloc
+        run: sudo apt-get update && sudo apt-get install -y cloc
+
+      - name: Generate cloc block
+        run: |
+          {
+            echo '```text'
+            echo "cloc stats ($(date +'%m/%d/%Y'))"
+            cloc .
+            echo '```'
+          } > cloc_block.txt
+
+      - name: Update README
+        run: |
+          python3 - << 'EOF'
+          from pathlib import Path
+
+          readme = Path("README.md")
+          text = readme.read_text()
+          block = Path("cloc_block.txt").read_text()
+
+          start = "<!-- CLOC-START -->"
+          end = "<!-- CLOC-END -->"
+
+          new_text = text.split(start)[0] + start + "\n" + block + end + text.split(end)[1]
+          readme.write_text(new_text)
+          EOF
+
+      - name: Commit updated README
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add README.md
+          git commit -m "Update cloc stats" || echo "No changes"
+          git push

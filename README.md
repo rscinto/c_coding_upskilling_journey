@@ -4,6 +4,10 @@ This repository documents my journey learning low-level software development in 
 
 The goal is not just to learn syntax, but to understand how computers actually work beneath the abstraction layers.
 
+
+<!-- CLOC-START -->
+<!-- CLOC-END -->
+
 Topics and projects in this repository will include:
 
 Core C programming fundamentals
