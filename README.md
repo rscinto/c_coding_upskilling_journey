@@ -6,6 +6,20 @@ The goal is not just to learn syntax, but to understand how computers actually w
 
 
 <!-- CLOC-START -->
+```text
+cloc stats (05/10/2026)
+github.com/AlDanial/cloc v 1.98  T=0.01 s (774.9 files/s, 40186.1 lines/s)
+-------------------------------------------------------------------------------
+Language                     files          blank        comment           code
+-------------------------------------------------------------------------------
+C                                4             39             25            185
+Markdown                         1             18              2             41
+YAML                             1             11              0             40
+Text                             1              0              0              2
+-------------------------------------------------------------------------------
+SUM:                             7             68             27            268
+-------------------------------------------------------------------------------
+```
 <!-- CLOC-END -->
 
 Topics and projects in this repository will include:
