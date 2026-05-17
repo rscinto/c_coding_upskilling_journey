@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define BUFFER_SIZE 8
 
@@ -84,32 +85,31 @@ bool ring_buffer_pop(ring_buffer_t *rb, uint8_t *data) {
 
 int main(void) {
 
-    char data_set_one[] = {'A', 'B', 'C', 'D', 'E'};
-    char data_set_two[] = {'F', 'G', 'H', 'I'};
-
     ring_buffer_t my_buffer;
     ring_buffer_init(&my_buffer);
 
-    for (size_t i = 0; i <= 4; i++) {
-        ring_buffer_push(&my_buffer, data_set_one[i]);
-    }
+    char command[16];
+    char value;
 
-    for (size_t i = 0; i<=1; i++) {
-        uint8_t temp = 0;
-        ring_buffer_pop(&my_buffer, &temp);
-        printf("%c", temp);
-    }
+    while (scanf("%15s", command) == 1) {
+        if (strcmp(command, "push") == 0) {
+            scanf(" %c", &value);
 
-    printf("\n");
+            if (ring_buffer_push(&my_buffer, (uint8_t)value)) {
+                printf("OK push %c\n", value);
+            } else {
+                printf("FAIL full\n");
+            }
+        }
+        else if (strcmp(command, "pop") == 0) {
+            uint8_t out;
 
-    for (size_t i = 0; i <= 3; i++) {
-        ring_buffer_push(&my_buffer, data_set_two[i]);
-    }
-
-    for (size_t i = 0; i<=7; i++) {
-        uint8_t temp = 0;
-        ring_buffer_pop(&my_buffer, &temp);
-        printf("%c", temp);
+            if (ring_buffer_pop(&my_buffer, &out)) {
+                printf("OK pop %c\n", out);
+            } else {
+                printf("FAIL empty\n");
+            }
+        }
     }
 
     return 0;
