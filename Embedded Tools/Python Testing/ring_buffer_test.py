@@ -1,3 +1,4 @@
+from pathlib import Path
 import subprocess
 
 commands = """\
@@ -16,11 +17,16 @@ pop
 pop
 """
 
+project_root = Path(__file__).resolve().parent.parent
+
+exe_path = project_root / "cmake-build-debug" / "relearn_ch1.exe"
+
 result = subprocess.run(
-    [r"C:\Users\rocco\CLionProjects\relearn_ch1\cmake-build-debug\relearn_ch1.exe"],
+    [str(exe_path)],
     input=commands,
     text=True,
     capture_output=True
 )
 
 print(result.stdout)
+print(result.stderr)
