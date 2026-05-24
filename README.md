@@ -67,7 +67,7 @@ The goal is simple:
 Keep building. Keep learning. Get closer to the metal.
 
 ## OLED SSD1306 Driver for STM32 Nucleo Board
-![Bits to Image](Drivers/OLED_SSD_1306%OLED.png)
+![Bits to Image](Drivers\OLED_SSD_1306\OLED.png)
 
 ## 6502 Computer Project
 Custom PCB work for my 6502 computer project.
