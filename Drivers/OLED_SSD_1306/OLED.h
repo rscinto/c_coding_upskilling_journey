@@ -8,11 +8,14 @@
 #ifndef INC_OLED_H_
 #define INC_OLED_H_
 
+#include "stm32f4xx_hal.h"
+#include <stdint.h>
+
 #define SSD1306_ADDR 0x3C
 #define FONT_WIDTH 5
 #define FONT_FIRST_CHAR 32   // space
 #define FONT_LAST_CHAR  122
-
+static I2C_HandleTypeDef *oled_i2c;
 
 void OLED_init(I2C_HandleTypeDef *hi2c);
 void OLED_draw_char(char c);
