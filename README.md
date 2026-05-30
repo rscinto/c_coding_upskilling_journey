@@ -69,7 +69,7 @@ Keep building. Keep learning. Get closer to the metal.
 ![Menus in Non Blocking App](working/OLED_menu/menus.png)
 
 ## OLED Menu State Machine
-![Flow Chart](working/OLED_menu/flow.png)
+![Flow Chart](working/OLED_menu/Flow.png)
 
 ## OLED SSD1306 Driver for STM32 Nucleo Board
 ![Bits to Image](Drivers/OLED_SSD_1306/OLED.png)
