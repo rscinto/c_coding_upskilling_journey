@@ -127,7 +127,7 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   OLED_init(&hi2c1);
-  app_init();
+  app_init(LD2_GPIO_Port, LD2_Pin);
 
   /* USER CODE END 2 */
 
@@ -142,16 +142,18 @@ int main(void)
 	    if (move_button_pressed)
 	    {
 	        move_button_pressed = false;
-	        HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+	        //HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
 	        app_handle_move_button();
 	    }
 
 	    if (select_button_pressed)
 	    {
 	        select_button_pressed = false;
-	        HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+	        //HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
 	        app_handle_select_button();
 	    }
+
+	    app_update();
   }
   /* USER CODE END 3 */
 }

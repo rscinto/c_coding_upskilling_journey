@@ -27,7 +27,8 @@ typedef enum //tracks LED state
     LED_MODE_OFF,
     LED_MODE_ON,
     LED_MODE_BLINK_SLOW,
-    LED_MODE_BLINK_FAST
+    LED_MODE_BLINK_FAST,
+	LED_MODE_COUNT
 } led_mode_t;
 
 typedef struct //tracks the state of which menu item is to be selected when the select button is pressed
@@ -36,6 +37,12 @@ typedef struct //tracks the state of which menu item is to be selected when the 
     screen_t current_screen;
     led_mode_t led_mode;
     uint32_t counter;
+
+    uint32_t last_blink_time;
+    uint32_t blink_interval_ms;
+
+    GPIO_TypeDef *led_port;
+    uint16_t led_pin;
 } app_t;
 
 
@@ -44,15 +51,21 @@ static app_t app =
     .selected_item = MENU_ITEM_BLINK,
 	.current_screen = SCREEN_MAIN_MENU,
 	.led_mode = LED_MODE_OFF,
-    .counter = 0
+    .counter = 0,
+    .last_blink_time = 0,
+    .blink_interval_ms = 500
 };
 
 void menu_init()
 {
-	OLED_clear();
+    OLED_clear();
+
     app.selected_item = MENU_ITEM_BLINK;
+    app.current_screen = SCREEN_MAIN_MENU;
+    app.led_mode = LED_MODE_OFF;
     app.counter = 0;
-    menu_draw();
+
+    menu_screen_draw();
 
 }
 
@@ -67,6 +80,7 @@ void menu_select()
 			        	OLED_clear();
 			        	OLED_set_cursor(0,0);
 			        	OLED_print("Blink Mode");
+			            blink_screen_draw();
 			            // set some app state saying we are now in blink screen
 			            break;
 
@@ -95,34 +109,30 @@ void menu_select()
 			        case MENU_ITEM_COUNT:// fall through into default. // make compiler happy including MENU_ITEM_COUNT
 			        default:
 			            // should never happen
-			            app.selected_item = MENU_ITEM_BLINK;
-			            menu_draw();
+			        	return_to_main();
 			            break;
 			    }
 	}
 	else //we're in a screen and we need to go back to the main menu.
 	{
-		app.current_screen = SCREEN_MAIN_MENU;
-		OLED_clear();
-		menu_draw();
+		return_to_main();
 	}
 
 }
 
-void menu_move_down(void) //moves cursor down on main menu. On nested menus too?
+void menu_move_down(void) //moves cursor down on main menu.
 {
-	//What happens when we press move down and we're not on the main menu?
-		//kind of using it as as a back button.
-    app.selected_item++;
+	    app.selected_item++;
 
-    if (app.selected_item >= MENU_ITEM_COUNT)
-    {
-        app.selected_item = MENU_ITEM_BLINK; //wrapping
-    }
-	menu_draw();
+	    if (app.selected_item >= MENU_ITEM_COUNT)
+	    {
+	        app.selected_item = MENU_ITEM_BLINK; //wrapping
+	    }
+		menu_screen_draw();
+
 }
 
-void menu_draw(void)
+void menu_screen_draw(void)
 {
     //OLED_clear(); // causes flutter whenever we move down.
 
@@ -154,14 +164,17 @@ void update_counter()
 }
 
 
-void app_init(void)
+void app_init(GPIO_TypeDef *led_port, uint16_t led_pin)
 {
 	app.selected_item = MENU_ITEM_BLINK;
 	app.current_screen = SCREEN_MAIN_MENU;
 	app.counter = 0;
+	app.led_mode = LED_MODE_OFF;
+	app.led_pin = led_pin;
+	app.led_port = led_port;
 
 	OLED_clear();
-	menu_draw();
+	menu_screen_draw();
 }
 
 void app_handle_move_button(void)
@@ -170,22 +183,29 @@ void app_handle_move_button(void)
     {
         case SCREEN_MAIN_MENU:
         	menu_move_down();
-        	//menu_draw(); menu move down already draws
+        	//menu_screen_draw(); menu move down already draws
             break;
 
         case SCREEN_COUNTER: // we're on the counter, and we now move back to main.
-        	OLED_clear();
-        	menu_draw();
+        	return_to_main();
             break;
 
         case SCREEN_BLINK:
-        	//TODO: blink screen options
-        	//nested menu
-            //break; // remove when we do more here.
+            app.led_mode++;
+
+            if (app.led_mode >= LED_MODE_COUNT)
+            {
+                app.led_mode = LED_MODE_OFF;
+            }
+
+            OLED_set_cursor(2, INDENT);
+            OLED_print("          ");
+            OLED_set_cursor(2, INDENT);
+            blink_screen_draw();
+        	break;
 
         case SCREEN_ABOUT:
-        	OLED_clear();
-        	menu_draw(); // go back to main.
+        	return_to_main();
             break;
     }
 }
@@ -205,9 +225,11 @@ void app_handle_select_button(void)
 	        	menu_select();
 	            break;
 	        case SCREEN_BLINK:
+	        	return_to_main();
 	        	break;
 	        case SCREEN_COUNTER:
 	        {//case braces to definitively make the buffer have local scope.
+	        	app.current_screen = SCREEN_COUNTER;
 	        	OLED_set_cursor(2,INDENT);
 	        	OLED_print("          ");
 	        	OLED_set_cursor(2,INDENT);
@@ -216,17 +238,82 @@ void app_handle_select_button(void)
 	        	OLED_print(buffer);
 	        	break;
 	        }
-	        case SCREEN_ABOUT:
-	    		app.current_screen = SCREEN_MAIN_MENU;
-	    		OLED_clear();
-	    		menu_draw();
-	            break;
+	        case SCREEN_ABOUT://falls through to main
 	        default:// if current state gets corrupt, just go back to main
-	            app.current_screen = SCREEN_MAIN_MENU;
-	            OLED_clear();
-	            menu_draw();
+	        	return_to_main();
 	            break;
 	    }
 
 }
 
+//LED_MODE_OFF,
+//LED_MODE_ON,
+//LED_MODE_BLINK_SLOW,
+//LED_MODE_BLINK_FAST
+//LED_MODE_COUNT
+void app_update(void)
+{
+    if (app.led_mode == LED_MODE_OFF)
+    {
+        HAL_GPIO_WritePin(app.led_port, app.led_pin, GPIO_PIN_RESET);
+        return;
+    }
+    else if(app.led_mode == LED_MODE_ON)
+    {
+    	HAL_GPIO_TogglePin(app.led_port, app.led_pin);
+    	return;
+    }
+    else if(app.led_mode == LED_MODE_BLINK_SLOW)
+    {
+    	app.blink_interval_ms = 500;
+    }
+    else if(app.led_mode == LED_MODE_BLINK_FAST)
+    {
+    	app.blink_interval_ms = 250;
+    }
+
+
+    uint32_t now = HAL_GetTick();
+
+    if ((now - app.last_blink_time) >= app.blink_interval_ms)
+    {
+        app.last_blink_time = now;
+        HAL_GPIO_TogglePin(app.led_port, app.led_pin);
+    }
+}
+
+
+
+
+void blink_screen_draw(void)
+{
+	switch(app.led_mode)
+	{
+	case LED_MODE_OFF:
+		OLED_set_cursor(2,INDENT);
+		OLED_print("Off");
+		break;
+	case LED_MODE_ON:
+		OLED_set_cursor(2,INDENT);
+		OLED_print("On");
+		break;
+	case LED_MODE_BLINK_SLOW:
+		OLED_set_cursor(2,INDENT);
+		OLED_print("Slow");
+		break;
+	case LED_MODE_BLINK_FAST:
+		OLED_set_cursor(2,INDENT);
+		OLED_print("Fast");
+		break;
+	case LED_MODE_COUNT:
+		break;
+	}
+}
+
+
+void return_to_main(void)
+{
+    app.current_screen = SCREEN_MAIN_MENU;
+    OLED_clear();
+    menu_screen_draw();
+}

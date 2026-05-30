@@ -57,7 +57,6 @@ Embedded communication between systems
 Tools and platforms:
 
 Linux / WSL2
-GCC / Clang
 Raspberry Pi
 ESP32
 STM32
@@ -65,6 +64,12 @@ Logic analyzers, oscilloscopes, and serial debugging tools
 
 The goal is simple:
 Keep building. Keep learning. Get closer to the metal.
+
+## OLED Menus
+![Menus in Non Blocking App](working/OLED_menu/menus.png)
+
+## OLED Menu State Machine
+![Flow Chart](working/OLED_menu/flow.png)
 
 ## OLED SSD1306 Driver for STM32 Nucleo Board
 ![Bits to Image](Drivers/OLED_SSD_1306/OLED.png)
