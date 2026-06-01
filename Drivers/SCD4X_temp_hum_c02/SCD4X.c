@@ -69,7 +69,7 @@ HAL_StatusTypeDef SCD4X_read_measurement(SCD4X_Measurement_t *out)
     {
         return status;
     }
-
+    //promote uint8 to uint16. fill with MSB. shift left 8 bits. fill lower 8 bits with LSB by using OR operatation
     uint16_t raw_co2  = ((uint16_t)rx[0] << 8) | rx[1];
     uint16_t raw_temp = ((uint16_t)rx[3] << 8) | rx[4];
     uint16_t raw_rh   = ((uint16_t)rx[6] << 8) | rx[7];

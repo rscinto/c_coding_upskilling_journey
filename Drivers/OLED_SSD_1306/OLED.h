@@ -15,7 +15,7 @@
 #define FONT_WIDTH 5
 #define FONT_FIRST_CHAR 32   // space
 #define FONT_LAST_CHAR  122
-static I2C_HandleTypeDef *oled_i2c;
+
 
 void OLED_init(I2C_HandleTypeDef *hi2c);
 void OLED_draw_char(char c);

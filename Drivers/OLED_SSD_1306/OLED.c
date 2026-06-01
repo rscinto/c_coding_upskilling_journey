@@ -1,9 +1,7 @@
-#ifndef OLED_H
-#define OLED_H
-
 #include "oled.h"
 
 
+static I2C_HandleTypeDef *oled_i2c;
 
 const uint8_t font5x7[][FONT_WIDTH] = {
 
@@ -426,6 +424,3 @@ uint8_t init[] = {
           }
       }
   }
-
-
-#endif

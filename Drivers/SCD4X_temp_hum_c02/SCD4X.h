@@ -9,6 +9,7 @@
 #define INC_SCD4X_H_
 
 #include "stm32f4xx_hal.h"
+#include <stdbool.h>
 //#include <stdint.h>
 
 #define SCD4X_ADDR 0x62
@@ -22,6 +23,7 @@ typedef struct
     uint16_t co2_ppm;
     float temperature_c;
     float humidity_rh;
+    bool sensor_OK;
 } SCD4X_Measurement_t;
 
 
