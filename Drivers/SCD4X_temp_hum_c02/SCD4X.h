@@ -10,6 +10,7 @@
 
 #include "stm32f4xx_hal.h"
 #include <stdbool.h>
+#include "sensor_common.h"
 //#include <stdint.h>
 
 #define SCD4X_ADDR 0x62
@@ -39,6 +40,9 @@
 #define SCD4X_CMD_POWER_DOWN                              0x36E0
 #define SCD4X_CMD_WAKE_UP                                 0x36F6
 
+//TODO: implement later to replace bool sensor_OK;
+ //USE Sensor_State_t
+
 typedef struct
 {
     uint16_t co2_ppm;
@@ -47,12 +51,36 @@ typedef struct
     bool sensor_OK;
 } SCD4X_Measurement_t;
 
+//TODO: implement later to replace original struct
+typedef struct
+{
+    I2C_HandleTypeDef *i2c;
+
+    SCD4X_Measurement_t data;
+
+    Sensor_State_t state;
+
+    uint32_t last_sample_time;
+    uint32_t sample_interval_ms;
+
+    uint32_t last_good_time;
+
+    uint8_t failure_count;
+    uint8_t max_failures;
+
+    bool data_valid;
+    bool initialized;
+
+} SCD4X_Handle_t;
 
 
-void SCD4X_init(I2C_HandleTypeDef *hi2c);
-HAL_StatusTypeDef  SCD4X_start_periodic_measurement();  //0x21b1 send command
-HAL_StatusTypeDef SCD4X_read_measurement(SCD4X_Measurement_t *out);		  //0xec05 read, 1ms execution // poll every 5 seconds
-HAL_StatusTypeDef  SCD4X_stop_periodic_measurement();   //0x3f86 send command, 500ms execution
+
+
+
+HAL_StatusTypeDef  SCD4X_init(SCD4X_Handle_t *dev, I2C_HandleTypeDef *hi2c);
+HAL_StatusTypeDef  SCD4X_start_periodic_measurement(SCD4X_Handle_t *dev);  //0x21b1 send command
+HAL_StatusTypeDef SCD4X_read_measurement(SCD4X_Handle_t *dev);		  //0xec05 read, 1ms execution // poll every 5 seconds
+HAL_StatusTypeDef  SCD4X_stop_periodic_measurement(SCD4X_Handle_t *dev);   //0x3f86 send command, 500ms execution
 
 
 

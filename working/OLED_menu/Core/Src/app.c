@@ -6,6 +6,9 @@
  */
 #include "app.h"
 #include "scd4x.h"
+#include "bmp_bme280.h"
+#include "hmc5883L.h"
+#include "sensor_common.h"
 
 static uint32_t last_scd4x_read_time = 0;
 
@@ -40,11 +43,11 @@ typedef struct //tracks the state of which menu item is to be selected when the 
 	screen_t current_screen;
 	led_mode_t led_mode;
 	uint32_t counter;
-	SCD4X_Measurement_t measurement;
 	uint32_t last_blink_time;
 	uint32_t blink_interval_ms;
 	GPIO_TypeDef *led_port;
 	uint16_t led_pin;
+	SCD4X_Handle_t scd4x;
 } app_t;
 
 static app_t app = {
@@ -54,7 +57,6 @@ static app_t app = {
 		.counter = 0,
 		.last_blink_time = 0,
 		.blink_interval_ms = 500,
-		.measurement.sensor_OK = false
 };
 
 
@@ -65,7 +67,7 @@ static app_t app = {
 
 static void format_temp(char *buffer, size_t size)
 {
-    int temp_x100 = (int)(app.measurement.temperature_c * 100.0f);
+    int temp_x100 = (int)(app.scd4x.data.temperature_c * 100.0f);
 
     snprintf(buffer, size, "%d.%02d",
              temp_x100 / 100,
@@ -78,7 +80,7 @@ static void format_temp(char *buffer, size_t size)
 
 static void format_humd(char *buffer, size_t size)
 {
-    int rh_x100 = (int)(app.measurement.humidity_rh * 100.0f);
+    int rh_x100 = (int)(app.scd4x.data.humidity_rh * 100.0f);
 
     snprintf(buffer, size, "%d.%02d",
     		rh_x100 / 100,
@@ -92,7 +94,7 @@ static void format_humd(char *buffer, size_t size)
 
 static void format_c02(char *buffer, size_t size)
 {
-    snprintf(buffer, size, "%d", app.measurement.co2_ppm);
+    snprintf(buffer, size, "%d", app.scd4x.data.co2_ppm);
 }
 
 
@@ -304,7 +306,7 @@ static void menu_select() {
 		}
 		case MENU_ITEM_DATA: {
 			app.current_screen = SCREEN_DATA;
-			if(app.measurement.sensor_OK)
+			if(app.scd4x.data_valid == true)
 			{
 				draw_data();
 			}
@@ -318,10 +320,18 @@ static void menu_select() {
 		case MENU_ITEM_ABOUT:
 			app.current_screen = SCREEN_ABOUT;
 			OLED_clear();
-			OLED_set_cursor(0, 0);
-			OLED_print("STM32 OLED UI");
 			OLED_set_cursor(1, 0);
-			OLED_print("By Rocco");
+			OLED_print("The hunger of a lion");
+			OLED_set_cursor(2, 0);
+			OLED_print("The strength of a sun");
+			OLED_set_cursor(3, 0);
+			OLED_print("She doesn't run the");
+			OLED_set_cursor(4, 0);
+			OLED_print("track,");
+			OLED_set_cursor(5, 0);
+			OLED_print("She makes the track");
+			OLED_set_cursor(6, 0);
+			OLED_print("run.");
 			break;
 		case MENU_ITEM_COUNT: // fall through into default. // make compiler happy including MENU_ITEM_COUNT
 		default:
@@ -370,33 +380,37 @@ static void app_update_LED(void) {
 
 static void app_update_scd4x(void) {
 
-	static int sensor_failures = 0;
+	 static int sensor_failures = 0;
 
-	if (HAL_GetTick() - last_scd4x_read_time >= 5000) {
-		last_scd4x_read_time = HAL_GetTick();
+	    if (HAL_GetTick() - last_scd4x_read_time >= app.scd4x.sample_interval_ms)
+	    {
+	        last_scd4x_read_time = HAL_GetTick();
 
-		if (SCD4X_read_measurement(&app.measurement) == HAL_OK) {
-			sensor_failures = 0;
-			app.measurement.sensor_OK = true;
-			if (app.current_screen == SCREEN_DATA) {
-				update_scd4x_data(); //we got fresh data, print it now please
-				// maybe we also make a update data instead of a total redraw
-			}
-		} else {
-			sensor_failures++;
-			app.measurement.sensor_OK = false;
-			if (app.current_screen == SCREEN_DATA) {
-				update_scd4x_data_fail(); //we got fresh data, print it now please
+	        if (SCD4X_read_measurement(&app.scd4x) == HAL_OK)
+	        {
+	            sensor_failures = 0;
 
-			}
+	            if (app.current_screen == SCREEN_DATA)
+	            {
+	                update_scd4x_data();
+	            }
+	        }
+	        else
+	        {
+	            sensor_failures++;
 
-			if(sensor_failures % 3 == 0)
-			{
-				sensor_failures = 0;
-				SCD4X_init(app.I2C_handle); // something failed, let us reinit
-			}
-		}
-	}
+	            if (app.current_screen == SCREEN_DATA)
+	            {
+	                update_scd4x_data_fail();
+	            }
+
+	            if (sensor_failures >= app.scd4x.max_failures)
+	            {
+	                sensor_failures = 0;
+	                SCD4X_init(&app.scd4x, app.I2C_handle);
+	            }
+	        }
+	    }
 }
 
 
@@ -534,10 +548,15 @@ void app_init(GPIO_TypeDef *led_port, uint16_t led_pin, I2C_HandleTypeDef *hi2c)
 	app.led_pin = led_pin;
 	app.led_port = led_port;
 
-	SCD4X_init(app.I2C_handle);
+	SCD4X_init(&app.scd4x, app.I2C_handle);
 	OLED_init(app.I2C_handle);
 
+	OLED_draw_bitmap(boot_logo_r_128x64);
+	OLED_set_cursor(7, 0);
+	OLED_print("      Roctronix");
+	HAL_Delay(2500);
 	OLED_clear();
+
 	menu_init();
 	menu_screen_draw();
 }

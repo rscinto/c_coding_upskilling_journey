@@ -1,6 +1,6 @@
 #include "scd4x.h"
 
-static I2C_HandleTypeDef *scd4x_i2c;
+
 
 
 uint8_t start_periodic_measurement_CMD[2] = {0x21, 0xB1};
@@ -42,7 +42,7 @@ static bool SCD4X_crc_ok(uint8_t msb, uint8_t lsb, uint8_t received_crc)
 
 
 
-static HAL_StatusTypeDef SCD4X_send_command(uint16_t command)
+static HAL_StatusTypeDef SCD4X_send_command(SCD4X_Handle_t *dev, uint16_t command)
 {
     uint8_t cmd[2];
 
@@ -50,7 +50,7 @@ static HAL_StatusTypeDef SCD4X_send_command(uint16_t command)
     cmd[1] = command & 0xFF;    // LSB
 
     return HAL_I2C_Master_Transmit(
-        scd4x_i2c,
+    		dev->i2c,
         SCD4X_ADDR << 1,
         cmd,
         2,
@@ -58,18 +58,44 @@ static HAL_StatusTypeDef SCD4X_send_command(uint16_t command)
     );
 }
 
-void SCD4X_init(I2C_HandleTypeDef *hi2c) {
+HAL_StatusTypeDef  SCD4X_init(SCD4X_Handle_t *dev, I2C_HandleTypeDef *hi2c) {
 	//power on
 	//wait 1000mS
-	scd4x_i2c = hi2c;
-	HAL_Delay(1000);
-	SCD4X_stop_periodic_measurement();
+    if (dev == NULL || hi2c == NULL)
+    {
+        return HAL_ERROR;
+    }
+
+    dev->i2c = hi2c;
+    dev->state = SENSOR_STATE_INIT;
+    dev->sample_interval_ms = 5000;
+    dev->failure_count = 0;
+    dev->max_failures = 3;
+    dev->data_valid = false;
+    dev->initialized = false;
+
+    HAL_Delay(1000);
+
+    SCD4X_stop_periodic_measurement(dev);
     HAL_Delay(500);
-    SCD4X_start_periodic_measurement();
+
+    HAL_StatusTypeDef status = SCD4X_start_periodic_measurement(dev);
+
+    if (status == HAL_OK)
+    {
+        dev->state = SENSOR_STATE_READY;
+        dev->initialized = true;
+    }
+    else
+    {
+        dev->state = SENSOR_STATE_ERROR;
+    }
+
+    return status;
 }
 
-HAL_StatusTypeDef  SCD4X_start_periodic_measurement(){
-	return SCD4X_send_command(SCD4X_CMD_START_PERIODIC_MEASUREMENT);
+HAL_StatusTypeDef  SCD4X_start_periodic_measurement(SCD4X_Handle_t *dev){
+	return SCD4X_send_command(dev, SCD4X_CMD_START_PERIODIC_MEASUREMENT);
 }
 
 
@@ -77,10 +103,10 @@ HAL_StatusTypeDef  SCD4X_start_periodic_measurement(){
 
 
 
-HAL_StatusTypeDef SCD4X_read_measurement(SCD4X_Measurement_t *out)
+HAL_StatusTypeDef SCD4X_read_measurement(SCD4X_Handle_t *dev)
 {
 
-    if (out == NULL)
+    if (dev == NULL)
     {
         return HAL_ERROR;
     }
@@ -89,7 +115,7 @@ HAL_StatusTypeDef SCD4X_read_measurement(SCD4X_Measurement_t *out)
 
     HAL_StatusTypeDef status;
 
-    status = SCD4X_send_command(SCD4X_CMD_READ_MEASUREMENT);
+    status = SCD4X_send_command(dev, SCD4X_CMD_READ_MEASUREMENT);
     if (status != HAL_OK)
     {
         return status;
@@ -98,7 +124,7 @@ HAL_StatusTypeDef SCD4X_read_measurement(SCD4X_Measurement_t *out)
     HAL_Delay(1);
 
     status = HAL_I2C_Master_Receive(
-        scd4x_i2c,
+		dev->i2c,
         SCD4X_ADDR << 1,
         rx,
         9,
@@ -111,18 +137,13 @@ HAL_StatusTypeDef SCD4X_read_measurement(SCD4X_Measurement_t *out)
     }
 
 
-    if(!SCD4X_crc_ok( rx[0], rx[1],  rx[2]))
+    if(!SCD4X_crc_ok( rx[0], rx[1],  rx[2]) |
+    		!SCD4X_crc_ok( rx[3], rx[4],  rx[5]) |
+				!SCD4X_crc_ok( rx[6], rx[7],  rx[8]))
     {
-    	return HAL_ERROR;
-    }
-
-    if(!SCD4X_crc_ok( rx[3], rx[4],  rx[5]))
-    {
-    	return HAL_ERROR;
-    }
-
-    if(!SCD4X_crc_ok( rx[6], rx[7],  rx[8]))
-    {
+    	dev->data.sensor_OK = false;
+    	dev->data_valid = false;
+    	dev->state = SENSOR_STATE_ERROR;
     	return HAL_ERROR;
     }
 
@@ -132,9 +153,14 @@ HAL_StatusTypeDef SCD4X_read_measurement(SCD4X_Measurement_t *out)
     uint16_t raw_temp = ((uint16_t)rx[3] << 8) | rx[4];
     uint16_t raw_rh   = ((uint16_t)rx[6] << 8) | rx[7];
 
-    out->co2_ppm = raw_co2;
-    out->temperature_c = -45.0f + 175.0f * ((float)raw_temp / 65535.0f);
-    out->humidity_rh = 100.0f * ((float)raw_rh / 65535.0f);
+    dev->data.co2_ppm = raw_co2;
+    dev->data.temperature_c = -45.0f + 175.0f * ((float)raw_temp / 65535.0f);
+    dev->data.humidity_rh = 100.0f * ((float)raw_rh / 65535.0f);
+
+    dev->data.sensor_OK = true;
+    dev->data_valid = true;
+    dev->state = SENSOR_STATE_READY;
+    dev->last_good_time = HAL_GetTick();
 
     return HAL_OK;
 }
@@ -143,8 +169,8 @@ HAL_StatusTypeDef SCD4X_read_measurement(SCD4X_Measurement_t *out)
 
 
 
-HAL_StatusTypeDef  SCD4X_stop_periodic_measurement(){
-	return SCD4X_send_command(SCD4X_CMD_STOP_PERIODIC_MEASUREMENT);
+HAL_StatusTypeDef  SCD4X_stop_periodic_measurement(SCD4X_Handle_t *dev){
+	return SCD4X_send_command(dev, SCD4X_CMD_STOP_PERIODIC_MEASUREMENT);
 }
 
 
