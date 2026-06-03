@@ -1,7 +1,7 @@
 #include "oled.h"
 
 
-static I2C_HandleTypeDef *oled_i2c;
+
 
 const uint8_t font5x7[][FONT_WIDTH] = {
 
@@ -305,14 +305,93 @@ uint8_t init[] = {
   uint8_t ram_mode[] = {0x00, 0xA4};
 
 
-  void OLED_init(I2C_HandleTypeDef *hi2c)
+  void OLED_draw_bitmap(OLED_Handle_t *oled, const uint8_t *bitmap)
+    {
+        uint8_t data[17];
+
+        data[0] = 0x40;
+
+        for (uint8_t page = 0; page < 8; page++)
+        {
+            OLED_set_cursor(oled,page, 0);
+
+            for (uint8_t chunk = 0; chunk < 8; chunk++)
+            {
+                for (uint8_t i = 0; i < 16; i++)
+                {
+                    data[i + 1] =
+                        bitmap[(page * 128) + (chunk * 16) + i];
+                }
+
+                HAL_I2C_Master_Transmit(oled->i2c,
+                                        SSD1306_ADDR << 1,
+                                        data,
+                                        sizeof(data),
+                                        HAL_MAX_DELAY);
+            }
+        }
+    }
+
+
+
+
+
+
+  void OLED_print(OLED_Handle_t *oled, char *str)
   {
-	  oled_i2c = hi2c;
-	  HAL_I2C_Master_Transmit(oled_i2c, (SSD1306_ADDR << 1),init,sizeof(init),HAL_MAX_DELAY);
-	  OLED_clear();
+      while (*str != '\0')
+      {
+          OLED_draw_char(oled, *str);
+          str++;
+      }
   }
 
-  void OLED_draw_char(char c)
+
+
+
+
+  void OLED_screen_test(OLED_Handle_t *oled)
+  {
+      uint8_t data[129];
+
+      data[0] = 0x40;   // data control byte
+
+      // Fill screen white
+      for (int i = 1; i < sizeof(data); i++)
+      {
+          data[i] = 0xFF;
+      }
+
+      OLED_set_cursor(oled, 0, 0);
+
+      for (int page = 0; page < 8; page++)
+      {
+          OLED_set_cursor(oled, page, 0);
+
+          HAL_I2C_Master_Transmit(oled->i2c,
+                                  SSD1306_ADDR << 1,
+                                  data,
+                                  sizeof(data),
+                                  HAL_MAX_DELAY);
+      }
+
+      HAL_Delay(2000);
+
+      OLED_clear(oled);
+
+      HAL_Delay(2000);
+  }
+
+
+  void OLED_init(OLED_Handle_t *oled, I2C_HandleTypeDef *hi2c)
+  {
+	  oled->i2c = hi2c;
+	  HAL_I2C_Master_Transmit(oled->i2c, (SSD1306_ADDR << 1),init,sizeof(init),HAL_MAX_DELAY);
+	  //OLED_screen_test();
+	  OLED_clear(oled);
+  }
+
+  void OLED_draw_char(OLED_Handle_t *oled, char c)
     {
         if (c < FONT_FIRST_CHAR  || c > FONT_LAST_CHAR)   // for now, based on your current table
         {
@@ -331,20 +410,13 @@ uint8_t init[] = {
 
         data[6] = 0x00;   // spacing
 
-        HAL_I2C_Master_Transmit(oled_i2c, SSD1306_ADDR << 1,
+        HAL_I2C_Master_Transmit(oled->i2c, SSD1306_ADDR << 1,
                                 data, sizeof(data), HAL_MAX_DELAY);
     }
 
-  void OLED_print(char *str)
-  {
-      while (*str != '\0')
-      {
-          OLED_draw_char(*str);
-          str++;
-      }
-  }
 
-  void OLED_draw_char_by_index(uint8_t index)
+
+  void OLED_draw_char_by_index(OLED_Handle_t *oled, uint8_t index)
   {
       uint8_t data[7];
 
@@ -357,10 +429,10 @@ uint8_t init[] = {
 
       data[6] = 0x00;
 
-      HAL_I2C_Master_Transmit(oled_i2c, SSD1306_ADDR << 1, data, sizeof(data), HAL_MAX_DELAY);
+      HAL_I2C_Master_Transmit(oled->i2c, SSD1306_ADDR << 1, data, sizeof(data), HAL_MAX_DELAY);
   }
 
-  void OLED_set_cursor(uint8_t page, uint8_t col)
+  void OLED_set_cursor(OLED_Handle_t *oled, uint8_t page, uint8_t col)
   {
 	  uint8_t set_pos[] = {
 	      0x00,
@@ -369,10 +441,10 @@ uint8_t init[] = {
 	      0x10 | ((col >> 4) & 0x0F)        // upper column nibble
 	  };
 
-	  HAL_I2C_Master_Transmit(oled_i2c, SSD1306_ADDR << 1, set_pos, sizeof(set_pos), HAL_MAX_DELAY);
+	  HAL_I2C_Master_Transmit(oled->i2c, SSD1306_ADDR << 1, set_pos, sizeof(set_pos), HAL_MAX_DELAY);
   }
 
-  void OLED_clear()
+  void OLED_clear(OLED_Handle_t *oled)
   {
 	    uint8_t clear[129];
 	    clear[0] = 0x40;
@@ -384,10 +456,10 @@ uint8_t init[] = {
 
 	    for (uint8_t page = 0; page < 8; page++)
 	    {
-	        OLED_set_cursor(page, 0);
+	        OLED_set_cursor(oled, page, 0);
 
 	        HAL_I2C_Master_Transmit(
-				oled_i2c,
+				oled->i2c,
 	            SSD1306_ADDR << 1,
 	            clear,
 	            sizeof(clear),
@@ -395,32 +467,11 @@ uint8_t init[] = {
 	        );
 	    }
 
-	    OLED_set_cursor(0, 0);
+	    OLED_set_cursor(oled, 0, 0);
   }
 
-  void OLED_draw_bitmap(const uint8_t *bitmap)
-  {
-      uint8_t data[17];
 
-      data[0] = 0x40;
 
-      for (uint8_t page = 0; page < 8; page++)
-      {
-          OLED_set_cursor(page, 0);
 
-          for (uint8_t chunk = 0; chunk < 8; chunk++)
-          {
-              for (uint8_t i = 0; i < 16; i++)
-              {
-                  data[i + 1] =
-                      bitmap[(page * 128) + (chunk * 16) + i];
-              }
 
-              HAL_I2C_Master_Transmit(oled_i2c,
-                                      SSD1306_ADDR << 1,
-                                      data,
-                                      sizeof(data),
-                                      HAL_MAX_DELAY);
-          }
-      }
-  }
+
