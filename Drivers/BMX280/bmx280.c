@@ -2,7 +2,7 @@
 
 
 
-static HAL_StatusTypeDef  BMX280_read_calibration(BMP280_Handle_t *dev)
+static HAL_StatusTypeDef  bmx280_read_calibration(BMX280_Handle_t *dev)
 {
 
 	uint8_t raw_cal_byte[24];
@@ -12,9 +12,10 @@ static HAL_StatusTypeDef  BMX280_read_calibration(BMP280_Handle_t *dev)
 		I2C_MEMADD_SIZE_8BIT,
 		raw_cal_byte,
 		24,
-		HAL_MAX_DELAY) == HAL_ERROR)
+		HAL_MAX_DELAY) != HAL_OK)
 	{
-		dev->state = SENSOR_STATE_ERROR;
+		//dev->failure_count++;    //Don't update these here. Too deep. Point of call has the responsibility
+		//dev->state = SENSOR_STATE_ERROR;
 		return HAL_ERROR;
 	}
 
@@ -27,6 +28,14 @@ static HAL_StatusTypeDef  BMX280_read_calibration(BMP280_Handle_t *dev)
 		raw_cal_full[i] = raw_cal_full[i] << 8;
 		raw_cal_full[i] = (raw_cal_full[i] & 0xFF00) | raw_cal_byte[--j];
 		j+=2;
+	}
+
+	//These need to be non zero for them to work
+	if(raw_cal_full[0] == 0 || raw_cal_full[1 == 0])
+	{
+		//dev->failure_count++;    //Don't update these here. Too deep. Point of call has the responsibility
+		//dev->state = SENSOR_STATE_ERROR;
+		return HAL_ERROR;
 	}
 
 	dev->calibration_data.dig_T1 = raw_cal_full[0];
@@ -47,65 +56,83 @@ static HAL_StatusTypeDef  BMX280_read_calibration(BMP280_Handle_t *dev)
 
 
 
+//at post, if the device address was correct we will know the address and sensor type.
+static HAL_StatusTypeDef try_address(BMX280_Handle_t *dev, uint8_t candidate_address)
+{
+	uint8_t id = 0;
+
+	if(	HAL_I2C_Mem_Read(dev->i2c,
+			candidate_address << 1,
+		REG_DEVICE_ID,
+		I2C_MEMADD_SIZE_8BIT, &id, 1,
+		HAL_MAX_DELAY) != HAL_OK)
+	{
+		// we were not able to successfully talk to the chip
+		return HAL_ERROR; // error is too deep, don't update sensor status or failure count
+	}
+
+	if(id == BMP280_ID)
+	{
+		dev->sensor = BMP280;
+		dev->sensor_address = candidate_address;
+		return HAL_OK;
+	}
+	else if(id == BME280_ID)
+	{
+		dev->sensor = BME280;
+		dev->sensor_address = candidate_address;
+		return HAL_OK;
+	}
+	else
+	{
+		//we got an unrecognized device so we have failed
+		return HAL_ERROR;// error is too deep, don't update sensor status or failure count
+	}
+}
 
 
 
 
-HAL_StatusTypeDef  BMP280_init(BMP280_Handle_t *dev, I2C_HandleTypeDef *hi2c) {
 
-    if (dev == NULL || hi2c == NULL)
+HAL_StatusTypeDef  bmx280_init(BMX280_Handle_t *dev, I2C_HandleTypeDef *hi2c) {
+
+    if (dev == NULL)
     {
-        return HAL_ERROR;
+    	return HAL_ERROR;
+    }
+    else if (hi2c == NULL)
+    {
+		dev->failure_count++;
+		dev->state = SENSOR_STATE_ERROR;
+		return HAL_ERROR;
     }
 
     dev->i2c = hi2c;
     dev->state = SENSOR_STATE_INIT;
     dev->sensor = UNKNOWN;
-    dev->sensor_address = BMP_BME280_ADDR_SDO_LOW; //need to confirm this. will do below. this is just a primer
     dev->sample_interval_ms = 5000;
     dev->failure_count = 0;
     dev->max_failures = 3;
     dev->data_valid = false;
     dev->initialized = false;
 
-	uint8_t id = 0;
+    //check for valid ID and device
+    if (try_address(dev, BMP_BME280_ADDR_SDO_LOW) == HAL_OK)
+    {
+        // valid BMX280 found
+    }
+    else if (try_address(dev, BMP_BME280_ADDR_SDO_HIGH) == HAL_OK)
+    {
+        // valid BMX280 found
+    }
+    else
+    {
+		dev->failure_count++;
+		dev->state = SENSOR_STATE_ERROR;
+		return HAL_ERROR;
+    }
+    //At this point we know the device type and the I2C Address
 
-
-
-	HAL_I2C_Mem_Read(dev->i2c, dev->sensor_address << 1,
-		REG_DEVICE_ID,
-		I2C_MEMADD_SIZE_8BIT, &id, 1,
-		HAL_MAX_DELAY);
-
-	if(id == BMP280_ID)
-	{
-		dev->sensor = BMP280;
-	}
-	else if(id == BME280_ID)
-	{
-		dev->sensor = BME280;
-	}
-	else //we did not get the right ID, try to other address.
-	{
-		HAL_I2C_Mem_Read(dev->i2c, dev->sensor_address << 1,
-				REG_DEVICE_ID,
-				I2C_MEMADD_SIZE_8BIT, &id, 1,
-				HAL_MAX_DELAY);
-		if(id == BMP280_ID)
-		{
-			dev->sensor = BMP280;
-		}
-		else if(id == BME280_ID)
-		{
-			dev->sensor = BME280;
-		}
-		else
-		{
-			//we tried both addresses and got invalid devices.
-			dev->state = SENSOR_STATE_ERROR;
-			return HAL_ERROR;
-		}
-	}
 
 	//Set some default  values to to the config and control measurement registers.
 	uint8_t default_carrier = DEFAULT_CONFIG_REG;
@@ -116,8 +143,9 @@ HAL_StatusTypeDef  BMP280_init(BMP280_Handle_t *dev, I2C_HandleTypeDef *hi2c) {
 			I2C_MEMADD_SIZE_8BIT,
 			&default_carrier,
 			1,
-			HAL_MAX_DELAY) == HAL_ERROR)
-	{// we were unsuccessful in setting up a default setting.
+			HAL_MAX_DELAY) != HAL_OK)
+	{// we were unsuccessful in setting up a default settings.
+		dev->failure_count++;
 		dev->state = SENSOR_STATE_ERROR;
 		return HAL_ERROR;
 	}
@@ -130,14 +158,16 @@ HAL_StatusTypeDef  BMP280_init(BMP280_Handle_t *dev, I2C_HandleTypeDef *hi2c) {
 			I2C_MEMADD_SIZE_8BIT,
 			&default_carrier,
 			1,
-			HAL_MAX_DELAY) == HAL_ERROR)
-	{// we were unsuccessful in setting up a default setting.
+			HAL_MAX_DELAY) != HAL_OK)
+	{// we were unsuccessful in setting up a default settings.
+		dev->failure_count++;
 		dev->state = SENSOR_STATE_ERROR;
 		return HAL_ERROR;
 	}
 
-	if(BMX280_read_calibration(dev) == HAL_ERROR) // we were not able to get the calibration so data will be junk
+	if(bmx280_read_calibration(dev) != HAL_OK) // we were not able to get the calibration so data will be junk
 	{
+		dev->failure_count++;
 		dev->state = SENSOR_STATE_ERROR;
 		return HAL_ERROR;
 	}
@@ -150,63 +180,101 @@ HAL_StatusTypeDef  BMP280_init(BMP280_Handle_t *dev, I2C_HandleTypeDef *hi2c) {
 
 
 
-static int32_t bmp280_compensate_T_int32(BMP280_Handle_t *dev, int32_t adc_T) {
+static int32_t bmx280_compensate_T_int32(BMX280_Handle_t *dev, int32_t adc_T) {
 	int32_t var1, var2, T;
-	var1 = ((((adc_T >> 3) - ((int32_t) dev->calibration_data.dig_T1 << 1))) * ((int32_t)dev->calibration_data.dig_T2))
-					>> 11;
-	var2 = (((((adc_T >> 4) - ((int32_t) dev->calibration_data.dig_T1)) * ((adc_T>>4) - ((int32_t)dev->calibration_data.dig_T1)))
-			>> 12)*
-			((int32_t)dev->calibration_data.dig_T3)) >> 14;
+	var1 = ((((adc_T >> 3) - ((int32_t) dev->calibration_data.dig_T1 << 1)))
+			* ((int32_t) dev->calibration_data.dig_T2)) >> 11;
+	var2 = (((((adc_T >> 4) - ((int32_t) dev->calibration_data.dig_T1))
+			* ((adc_T >> 4) - ((int32_t) dev->calibration_data.dig_T1))) >> 12)
+			* ((int32_t) dev->calibration_data.dig_T3)) >> 14;
 	dev->t_fine = var1 + var2;
 	T = (dev->t_fine * 5 + 128) >> 8;
 	return T;
 }
 
-static int32_t bmp280_compensate_P_int64(BMP280_Handle_t *dev,int32_t adc_P) {
+static int32_t bmx280_compensate_P_int64(BMX280_Handle_t *dev, int32_t adc_P) {
 	int64_t var1, var2, p;
-	var1 = ((int64_t) dev->t_fine)
-	- 128000;
+	var1 = ((int64_t) dev->t_fine) - 128000;
 	var2 = var1 * var1 * (int64_t) dev->calibration_data.dig_P6;
 	var2 = var2 + ((var1 * (int64_t) dev->calibration_data.dig_P5) << 17);
 	var2 = var2 + (((int64_t) dev->calibration_data.dig_P4) << 35);
 	var1 = ((var1 * var1 * (int64_t) dev->calibration_data.dig_P3) >> 8)
 			+ ((var1 * (int64_t) dev->calibration_data.dig_P2) << 12);
-	var1 = (((((int64_t) 1) << 47) + var1)) * ((int64_t) dev->calibration_data.dig_P1)
-			>> 33;
+	var1 = (((((int64_t) 1) << 47) + var1))
+			* ((int64_t) dev->calibration_data.dig_P1) >> 33;
 	if (var1 == 0) {
 		return 0; // avoid exception caused by division by zero
 	}
 	p = 1048576 - adc_P;
 	p = (((p << 31) - var2) * 3125) / var1;
-	var1 = (((int64_t) dev->calibration_data.dig_P9) * (p >> 13) * (p >> 13)) >> 25;
+	var1 = (((int64_t) dev->calibration_data.dig_P9) * (p >> 13) * (p >> 13))
+			>> 25;
 	var2 = (((int64_t) dev->calibration_data.dig_P8) * p) >> 19;
-	p = ((p + var1 + var2) >> 8) + (((int64_t) dev->calibration_data.dig_P7) << 4);
+	p = ((p + var1 + var2) >> 8)
+			+ (((int64_t) dev->calibration_data.dig_P7) << 4);
 
 	return (int32_t) p;
 }
 
-HAL_StatusTypeDef BMP280_read_measurement(BMP280_Handle_t *dev) {
+HAL_StatusTypeDef bmx280_read_measurement(BMX280_Handle_t *dev) {
 	//reading in a batch so data is not cutoff.
 	uint8_t raw_data[6];
-	//TODO: error check to see if this succeeds.
-	HAL_I2C_Mem_Read(dev->i2c, dev->sensor_address << 1,
+
+	if(HAL_I2C_Mem_Read(dev->i2c, dev->sensor_address << 1,
 	REG_PRESS_DATA_START,
 	I2C_MEMADD_SIZE_8BIT, raw_data, 6,
-	HAL_MAX_DELAY);
+	HAL_MAX_DELAY) != HAL_OK){
+		//the read failed
+		dev->data_valid = false;
+		return HAL_ERROR;
+	}
 
 	int32_t temp_raw =
 	    ((int32_t)raw_data[3] << 12) |
 	    ((int32_t)raw_data[4] << 4)  |
 	    ((int32_t)raw_data[5] >> 4);
 
-	dev->data.temperature_c = bmp280_compensate_T_int32(dev, temp_raw) / 100;
+	dev->data.temperature_c = bmx280_compensate_T_int32(dev, temp_raw) / 100;
 
 	int32_t pressure_raw =
 	    ((int32_t)raw_data[0] << 12) |
 	    ((int32_t)raw_data[1] << 4)  |
 	    ((int32_t)raw_data[2] >> 4);
-	dev->data.pressure_pa = bmp280_compensate_P_int64(dev, pressure_raw) / 256;
+	dev->data.pressure_pa = bmx280_compensate_P_int64(dev, pressure_raw) / 256;
+
+	//TODO: need more error checking to really feel solid about this bool
+	dev->data_valid = true;
 
 	return HAL_OK;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

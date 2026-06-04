@@ -691,6 +691,14 @@ void app_init(GPIO_TypeDef *led_port, uint16_t led_pin, I2C_HandleTypeDef *hi2c_
 	OLED_set_cursor(&app.OLED_main,7, 0);
 	OLED_print(&app.OLED_main,"v0.01");
 
+	HAL_Delay(1500);
+	OLED_clear(&app.OLED_main);
+
+	menu_init();
+	menu_screen_draw();
+
+
+
 	OLED_draw_bitmap(&app.OLED_graph_1,boot_logo_r_128x64);
 	OLED_set_cursor(&app.OLED_graph_1,6, 0);
 	OLED_print(&app.OLED_graph_1,"      Roctronix");
@@ -703,10 +711,8 @@ void app_init(GPIO_TypeDef *led_port, uint16_t led_pin, I2C_HandleTypeDef *hi2c_
 	OLED_set_cursor(&app.OLED_graph_2,7, 0);
 	OLED_print(&app.OLED_graph_2,"G2");
 
-	HAL_Delay(1500);
-	OLED_clear(&app.OLED_main);
 
 
-	menu_init();
-	menu_screen_draw();
+
+
 }

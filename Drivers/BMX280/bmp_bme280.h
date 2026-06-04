@@ -104,7 +104,7 @@ typedef struct
     bool data_valid;
     bool initialized;
 
-} BMP280_Handle_t;
+} BMX280_Handle_t;
 
 /* TODO: implement these for ease later in architecture
 measurement data
@@ -117,7 +117,7 @@ data_is_valid
 state
 */
 
-HAL_StatusTypeDef  BMP280_init(BMP280_Handle_t *dev, I2C_HandleTypeDef *hi2c);
-HAL_StatusTypeDef  BMP280_read_measurement(BMP280_Handle_t *dev);
+HAL_StatusTypeDef  bmx280_init(BMX280_Handle_t *dev, I2C_HandleTypeDef *hi2c);
+HAL_StatusTypeDef  bmx280_read_measurement(BMX280_Handle_t *dev);
 
 #endif
