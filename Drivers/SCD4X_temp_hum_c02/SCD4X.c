@@ -50,7 +50,7 @@ static HAL_StatusTypeDef SCD4X_send_command(SCD4X_Handle_t *dev, uint16_t comman
     cmd[1] = command & 0xFF;    // LSB
 
     return HAL_I2C_Master_Transmit(
-    		dev->i2c,
+		dev->i2c,
         SCD4X_ADDR << 1,
         cmd,
         2,
@@ -71,7 +71,7 @@ HAL_StatusTypeDef  SCD4X_init(SCD4X_Handle_t *dev, I2C_HandleTypeDef *hi2c) {
     dev->sample_interval_ms = 5000;
     dev->failure_count = 0;
     dev->max_failures = 3;
-    dev->data_valid = false;
+    dev->data.valid = false;
     dev->initialized = false;
 
     HAL_Delay(1000);
@@ -85,6 +85,7 @@ HAL_StatusTypeDef  SCD4X_init(SCD4X_Handle_t *dev, I2C_HandleTypeDef *hi2c) {
     {
         dev->state = SENSOR_STATE_READY;
         dev->initialized = true;
+        dev->last_sample_time = HAL_GetTick();
     }
     else
     {
@@ -133,16 +134,19 @@ HAL_StatusTypeDef SCD4X_read_measurement(SCD4X_Handle_t *dev)
 
     if (status != HAL_OK)
     {
+        dev->data.sensor_OK = false;
+        dev->data.valid = false;
+        dev->state = SENSOR_STATE_ERROR;
         return status;
     }
 
 
-    if(!SCD4X_crc_ok( rx[0], rx[1],  rx[2]) |
-    		!SCD4X_crc_ok( rx[3], rx[4],  rx[5]) |
-				!SCD4X_crc_ok( rx[6], rx[7],  rx[8]))
+    if (!SCD4X_crc_ok(rx[0], rx[1], rx[2]) ||
+        !SCD4X_crc_ok(rx[3], rx[4], rx[5]) ||
+        !SCD4X_crc_ok(rx[6], rx[7], rx[8]))
     {
     	dev->data.sensor_OK = false;
-    	dev->data_valid = false;
+    	dev->data.valid = false;
     	dev->state = SENSOR_STATE_ERROR;
     	return HAL_ERROR;
     }
@@ -158,7 +162,7 @@ HAL_StatusTypeDef SCD4X_read_measurement(SCD4X_Handle_t *dev)
     dev->data.humidity_rh = 100.0f * ((float)raw_rh / 65535.0f);
 
     dev->data.sensor_OK = true;
-    dev->data_valid = true;
+    dev->data.valid = true;
     dev->state = SENSOR_STATE_READY;
     dev->last_good_time = HAL_GetTick();
 

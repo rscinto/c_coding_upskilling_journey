@@ -101,7 +101,6 @@ typedef struct
     uint8_t failure_count;
     uint8_t max_failures;
 
-    bool data_valid;
     bool initialized;
 
 } BMX280_Handle_t;

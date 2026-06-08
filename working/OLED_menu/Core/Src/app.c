@@ -4,26 +4,30 @@
  *  Created on: May 25, 2026
  *      Author: rocco
  */
+#include <qmc5883L.h>
+#include <string.h>
 #include "app.h"
 #include "scd4x.h"
 #include "bmp_bme280.h"
-#include "hmc5883L.h"
+#include "qmc5883L.h"
 #include "sensor_common.h"
+#include "serial_output.h"
 
-
+#define QMC5883L_MOUNTING_OFFSET_DEG  (-90.0f)
 
 
 typedef enum  //tracks which screen we're on
 {
-	SCREEN_MAIN_MENU, SCREEN_BLINK, SCREEN_COUNTER, SCREEN_DATA, SCREEN_BMX280, SCREEN_ABOUT
+	SCREEN_MAIN_MENU, SCREEN_BLINK, SCREEN_COUNTER, SCREEN_SCD4X, SCREEN_BMX280, SCREEN_QMC5883L, SCREEN_ABOUT
 } screen_t;
 
 typedef enum //tracks where the cursor is pointing.
 {
 	MENU_ITEM_BLINK,  // ==0
 	MENU_ITEM_COUNTER,  // ==1
-	MENU_ITEM_DATA,
+	MENU_ITEM_SCD4X,
 	MENU_ITEM_BMX280,
+	MENU_ITEM_QMC5883L,
 	MENU_ITEM_ABOUT,
 	MENU_ITEM_COUNT    //keeps track of the size of the menu for cursor wrapping
 } menu_item_t;
@@ -42,6 +46,7 @@ typedef struct //tracks the state of which menu item is to be selected when the 
 	I2C_HandleTypeDef *I2C_handle;
 	I2C_HandleTypeDef *I2C_handle_graph_1;
 	I2C_HandleTypeDef *I2C_handle_graph_2;
+	UART_HandleTypeDef *uart;
 	menu_item_t selected_item;
 	screen_t current_screen;
 	led_mode_t led_mode;
@@ -51,7 +56,9 @@ typedef struct //tracks the state of which menu item is to be selected when the 
 	GPIO_TypeDef *led_port;
 	uint16_t led_pin;
 	SCD4X_Handle_t scd4x;
-	BMP280_Handle_t bmp280;
+	BMX280_Handle_t bmx280;
+	QMC5883L_Handle_t qmc5883L;
+	Serial_Output_t serial;
 	OLED_Handle_t OLED_main;
 	OLED_Handle_t OLED_graph_1;
 	OLED_Handle_t OLED_graph_2;
@@ -68,12 +75,176 @@ static app_t app = {
 
 
 
+static void serial_output_send_csv(Serial_Output_t *serial)
+{
+    char line[256];
+
+    snprintf(line, sizeof(line),
+             "%lu,%d,%.2f,%d,%lu,%.2f,%.2f,%d,%.1f\r\n",
+             (unsigned long)HAL_GetTick(),
+
+             app.bmx280.data.valid,
+             app.bmx280.data.pressure_pa,
+
+             app.scd4x.data.valid,
+             (unsigned long)app.scd4x.data.co2_ppm,
+             app.scd4x.data.temperature_c,
+             app.scd4x.data.humidity_rh,
+
+             app.qmc5883L.measurement.valid,
+             app.qmc5883L.measurement.heading_deg);
+
+    HAL_UART_Transmit(serial->uart,
+                      (uint8_t *)line,
+                      strlen(line),
+                      100);
+}
+
+
+
+
+static void serial_output_send_header(Serial_Output_t *serial)
+{
+    const char *header =
+        "time_ms,"
+        "bmx_ok,pressure_pa,"
+        "scd_ok,co2_ppm,scd_temp_c,scd_humidity_rh,"
+        "qmc_ok,heading_deg\r\n";
+
+    HAL_UART_Transmit(serial->uart,
+                      (uint8_t *)header,
+                      strlen(header),
+                      100);
+}
+
+void serial_output_update(Serial_Output_t *serial)
+{
+    uint32_t now = HAL_GetTick();
+
+    if (!serial->header_sent)
+    {
+        serial_output_send_header(serial);
+        serial->header_sent = true;
+    }
+
+    if (now - serial->last_tx_ms < serial->interval_ms)
+    {
+        return;
+    }
+
+    serial->last_tx_ms = now;
+
+    serial_output_send_csv(serial);
+}
+
+
+
+
+
+
+
+static float qmc5883l_wrap_heading(float heading_deg)
+{
+    while (heading_deg < 0.0f)
+    {
+        heading_deg += 360.0f;
+    }
+
+    while (heading_deg >= 360.0f)
+    {
+        heading_deg -= 360.0f;
+    }
+
+    return heading_deg;
+}
+
+
+static void format_heading_QMC5883L(char *buffer, size_t size)
+{
+    float heading = app.qmc5883L.measurement.heading_deg;
+
+    heading += QMC5883L_MOUNTING_OFFSET_DEG;
+    heading = qmc5883l_wrap_heading(heading);
+
+    snprintf(buffer, size, "%03ld deg", (long)heading);
+}
+
+
+
+
+
+static void draw_data_QMC5883L(void) {
+
+	OLED_clear(&app.OLED_main);
+	OLED_set_cursor(&app.OLED_main,0, 0);
+	OLED_print(&app.OLED_main,"Data QMC5883L");
+	OLED_set_cursor(&app.OLED_main,1, 0);
+	OLED_print(&app.OLED_main,"Heading");
+	OLED_set_cursor(&app.OLED_main,2, 0);
+
+	char buffer[16];
+	format_heading_QMC5883L(buffer, sizeof(buffer));
+	OLED_print(&app.OLED_main, buffer);
+}
+
+
+static void calibrating_message_QMC5883L(void) {
+
+	OLED_clear(&app.OLED_main);
+	OLED_set_cursor(&app.OLED_main,0, 0);
+	OLED_print(&app.OLED_main,"Data QMC5883L");
+	OLED_set_cursor(&app.OLED_main,1, 0);
+	OLED_print(&app.OLED_main,"Calibrating:");
+	OLED_set_cursor(&app.OLED_main,2, 0);
+	OLED_print(&app.OLED_main,"15 sec");
+	OLED_set_cursor(&app.OLED_main,3, 0);
+	OLED_print(&app.OLED_main,"Move device in many");
+	OLED_set_cursor(&app.OLED_main,4, 0);
+	OLED_print(&app.OLED_main,"orientations");
+}
+
+
+static void update_QMC5883L_data(void)
+{
+    char buffer[16];
+
+    OLED_set_cursor(&app.OLED_main, 2, 0);
+    OLED_print(&app.OLED_main, "                ");
+
+    OLED_set_cursor(&app.OLED_main, 2, 0);
+    format_heading_QMC5883L(buffer, sizeof(buffer));
+    OLED_print(&app.OLED_main, buffer);
+}
+
+
+
+
+
+
+
+static void update_QMC5883L_data_fail(void)
+{
+		OLED_set_cursor(&app.OLED_main,2, 0);
+		OLED_print(&app.OLED_main,"      ");
+		OLED_set_cursor(&app.OLED_main,2, 0);
+		OLED_print(&app.OLED_main,"Error");
+
+}
+
+
+
+
+
+
+
+
+
 
 
 
 static void format_press_BMX280(char *buffer, size_t size)
 {
-	int32_t pa = app.bmp280.data.pressure_pa;
+	int32_t pa = app.bmx280.data.pressure_pa;
 
 	snprintf(buffer, size, "%ld.%02ld hPa",
 	         (long)(pa / 100),
@@ -171,7 +342,7 @@ static void draw_data(void) {
 
 	OLED_clear(&app.OLED_main);
 	OLED_set_cursor(&app.OLED_main,0, 0);
-	OLED_print(&app.OLED_main,"Data");
+	OLED_print(&app.OLED_main,"Data SCD4X");
 
 	//need some while data is good logic later.
 	// need to be able to update in real time
@@ -278,9 +449,9 @@ static void menu_screen_draw(void) {
 	OLED_print(&app.OLED_main,"Counter");
 
 	OLED_set_cursor(&app.OLED_main,3, 0);
-	OLED_print(&app.OLED_main,app.selected_item == MENU_ITEM_DATA ? ">" : " ");
+	OLED_print(&app.OLED_main,app.selected_item == MENU_ITEM_SCD4X ? ">" : " ");
 	OLED_set_cursor(&app.OLED_main,3, INDENT);
-	OLED_print(&app.OLED_main,"Data");
+	OLED_print(&app.OLED_main,"Data SCD4X");
 
 	OLED_set_cursor(&app.OLED_main,4, 0);
 	OLED_print(&app.OLED_main,app.selected_item == MENU_ITEM_BMX280 ? ">" : " ");
@@ -288,8 +459,13 @@ static void menu_screen_draw(void) {
 	OLED_print(&app.OLED_main,"Data BMX280");
 
 	OLED_set_cursor(&app.OLED_main,5, 0);
-	OLED_print(&app.OLED_main,app.selected_item == MENU_ITEM_ABOUT ? ">" : " ");
+	OLED_print(&app.OLED_main,app.selected_item == MENU_ITEM_QMC5883L ? ">" : " ");
 	OLED_set_cursor(&app.OLED_main,5, INDENT);
+	OLED_print(&app.OLED_main,"Data QMC5883L");
+
+	OLED_set_cursor(&app.OLED_main,6, 0);
+	OLED_print(&app.OLED_main,app.selected_item == MENU_ITEM_ABOUT ? ">" : " ");
+	OLED_set_cursor(&app.OLED_main,6, INDENT);
 	OLED_print(&app.OLED_main,"About");
 }
 
@@ -374,11 +550,12 @@ static void menu_select() {
 			OLED_print(&app.OLED_main,buffer);
 			break;
 		}
-		case MENU_ITEM_DATA: {
-			app.current_screen = SCREEN_DATA;
-			if(app.scd4x.data_valid == true)
+		case MENU_ITEM_SCD4X: {
+			app.current_screen = SCREEN_SCD4X;
+			if(app.scd4x.data.valid == true)
 			{
 				draw_data();
+				update_scd4x_data();
 			}
 			else
 			{
@@ -389,9 +566,10 @@ static void menu_select() {
 		}
 		case MENU_ITEM_BMX280: {
 			app.current_screen = SCREEN_BMX280;
-			if(app.bmp280.data_valid == true)
+			if(app.bmx280.data.valid == true)
 			{
 				draw_data_BMX280();
+				update_BMX280_data();
 			}
 			else
 			{
@@ -401,21 +579,46 @@ static void menu_select() {
 			}
 			break;
 		}
+		case MENU_ITEM_QMC5883L: {
+			app.current_screen = SCREEN_QMC5883L;
+
+			if(app.qmc5883L.calibrated == false)
+			{
+				calibrating_message_QMC5883L();
+				qmc5883l_calibrate(&app.qmc5883L, 15000); //todo: update to 15000 when finished testing
+				OLED_clear(&app.OLED_main);
+				draw_data_QMC5883L();
+			}
+			else if(app.qmc5883L.measurement.valid == true)
+			{
+				draw_data_QMC5883L();
+				update_QMC5883L_data();
+
+			}
+			else if(app.qmc5883L.measurement.valid == false)
+			{
+				draw_data_QMC5883L();
+				update_QMC5883L_data_fail();
+			}
+			break;
+		}
 		case MENU_ITEM_ABOUT:
 			app.current_screen = SCREEN_ABOUT;
 			OLED_clear(&app.OLED_main);
+			OLED_set_cursor(&app.OLED_main,0, 0);
+			OLED_print(&app.OLED_main,"She burns so bright,");
 			OLED_set_cursor(&app.OLED_main,1, 0);
-			OLED_print(&app.OLED_main,"The hunger of a lion");
+			OLED_print(&app.OLED_main,"to the world's ");
 			OLED_set_cursor(&app.OLED_main,2, 0);
-			OLED_print(&app.OLED_main,"The strength of a sun");
+			OLED_print(&app.OLED_main,"delight,");
 			OLED_set_cursor(&app.OLED_main,3, 0);
-			OLED_print(&app.OLED_main,"She doesn't run the");
+			OLED_print(&app.OLED_main,"Her given light,");
 			OLED_set_cursor(&app.OLED_main,4, 0);
-			OLED_print(&app.OLED_main,"track,");
+			OLED_print(&app.OLED_main,"Can shine in the");
 			OLED_set_cursor(&app.OLED_main,5, 0);
-			OLED_print(&app.OLED_main,"She makes the track");
-			OLED_set_cursor(&app.OLED_main,6, 0);
-			OLED_print(&app.OLED_main,"run.");
+			OLED_print(&app.OLED_main,"darkest night.");
+
+
 			break;
 		case MENU_ITEM_COUNT: // fall through into default. // make compiler happy including MENU_ITEM_COUNT
 		default:
@@ -464,15 +667,16 @@ static void app_update_LED(void) {
 void app_update_bmx280(void)
 {
 
-	BMP280_read_measurement(&app.bmp280);
+	//this has a HAL_OK, HAL_ERROR return. need to use it.
+	///bmx280_read_measurement(&app.bmx280);
 
-    if (HAL_GetTick() - app.bmp280.last_sample_time >= app.bmp280.sample_interval_ms)
+    if (HAL_GetTick() - app.bmx280.last_sample_time >= app.bmx280.sample_interval_ms)
     {
-    	app.bmp280.last_sample_time = HAL_GetTick();
+    	app.bmx280.last_sample_time = HAL_GetTick();
 
-        if (BMP280_read_measurement(&app.bmp280) == HAL_OK)
+        if (bmx280_read_measurement(&app.bmx280) == HAL_OK)
         {
-            app.bmp280.failure_count = 0;
+            app.bmx280.failure_count = 0;
 
             if (app.current_screen == SCREEN_BMX280)
             {
@@ -481,17 +685,17 @@ void app_update_bmx280(void)
         }
         else
         {
-        	app.bmp280.failure_count++;
+        	app.bmx280.failure_count++;
 
             if (app.current_screen == SCREEN_BMX280)
             {
-                //update_scd4x_data_fail();
+            	update_BMX280_data_fail();
             }
 
-            if (app.bmp280.failure_count >= app.bmp280.max_failures)
+            if (app.bmx280.failure_count >= app.bmx280.max_failures)
             {
-            	app.bmp280.failure_count = 0;
-            	BMP280_init(&app.bmp280, app.I2C_handle);
+            	app.bmx280.failure_count = 0;
+            	bmx280_init(&app.bmx280, app.I2C_handle);
             }
         }
     }
@@ -513,7 +717,7 @@ static void app_update_scd4x(void) {
 	        {
 	            app.scd4x.failure_count = 0;
 
-	            if (app.current_screen == SCREEN_DATA)
+	            if (app.current_screen == SCREEN_SCD4X)
 	            {
 	                update_scd4x_data();
 	            }
@@ -522,7 +726,7 @@ static void app_update_scd4x(void) {
 	        {
 	        	app.scd4x.failure_count++;
 
-	            if (app.current_screen == SCREEN_DATA)
+	            if (app.current_screen == SCREEN_SCD4X)
 	            {
 	                update_scd4x_data_fail();
 	            }
@@ -580,8 +784,9 @@ void app_handle_move_button(void) {
 		OLED_set_cursor(&app.OLED_main,2, INDENT);
 		blink_screen_draw();
 		break;
-	case SCREEN_DATA: // fall through and return to main.
+	case SCREEN_SCD4X: // fall through and return to main.
 	case SCREEN_BMX280: // fall through and return to main.
+	case SCREEN_QMC5883L: // fall through and return to main.
 	case SCREEN_ABOUT:
 		return_to_main();
 		break;
@@ -614,7 +819,9 @@ void app_handle_select_button(void) {
 		break;
 	}
 	case SCREEN_ABOUT: //falls through to main
-	case SCREEN_DATA: //fall through and return to main
+	case SCREEN_SCD4X: //fall through and return to main
+	case SCREEN_BMX280: // fall through and return to main.
+	case SCREEN_QMC5883L: // fall through and return to main.
 	default: // if current state gets corrupt, just go back to main
 		return_to_main();
 		break;
@@ -627,10 +834,75 @@ void app_handle_select_button(void) {
 
 
 
+
+static void app_update_qmc5883L(void)
+{
+
+    if (HAL_GetTick() - app.qmc5883L.last_sample_time >= app.qmc5883L.sample_interval_ms)
+    {
+    	app.qmc5883L.last_sample_time = HAL_GetTick();
+
+        if (qmc5883l_update_heading(&app.qmc5883L) == HAL_OK)
+        {
+            app.qmc5883L.failure_count = 0;
+            ;
+            if (app.current_screen == SCREEN_QMC5883L)
+            {
+            	update_QMC5883L_data();
+            }
+        }
+        else
+        {
+        	app.qmc5883L.failure_count++;
+
+            if (app.current_screen == SCREEN_SCD4X)
+            {
+                //update_scd4x_data_fail();
+            }
+
+            if (app.qmc5883L.failure_count >= app.qmc5883L.max_failures)
+            {
+            	app.scd4x.failure_count = 0;
+                //SCD4X_init(&app.scd4x, app.I2C_handle);
+            }
+        }
+    }
+
+}
+
+
+
+
 static void app_update_sensors(void) {
 
 	app_update_scd4x();
 	app_update_bmx280();
+	app_update_qmc5883L();
+
+	char line[256];
+
+	    snprintf(line, sizeof(line),
+	             "%lu,%d,%.2f,%.2f,%d,%lu,%.2f,%.2f,%d,%d,%d,%d,%.1f\r\n",
+	             HAL_GetTick(),
+
+	             app.bmx280.data.valid,
+	             app.bmx280.data.temperature_c,
+	             app.bmx280.data.pressure_pa,
+
+	             app.scd4x.data.valid,  app.scd4x.data.valid,
+	             app.scd4x.data.co2_ppm,
+	             app.scd4x.data.temperature_c,
+	             app.scd4x.data.humidity_rh,
+
+	             app.qmc5883L.measurement.valid,
+	             app.qmc5883L.measurement.raw_x,
+	             app.qmc5883L.measurement.raw_y,
+	             app.qmc5883L.measurement.raw_z,
+	             app.qmc5883L.measurement.heading_deg);
+
+	   // HAL_UART_Transmit(app.serial, (uint8_t *)line, strlen(line), 100);
+
+
 
 }
 
@@ -642,6 +914,7 @@ static void app_update_sensors(void) {
 void app_update(void) {
 	app_update_LED();
 	app_update_sensors();
+	serial_output_update(&app.serial);
 
 }
 
@@ -665,10 +938,11 @@ static void menu_init() {
 
 
 
-void app_init(GPIO_TypeDef *led_port, uint16_t led_pin, I2C_HandleTypeDef *hi2c_1, I2C_HandleTypeDef *hi2c_2, I2C_HandleTypeDef *hi2c_3) {
+void app_init(GPIO_TypeDef *led_port, uint16_t led_pin, I2C_HandleTypeDef *hi2c_1, I2C_HandleTypeDef *hi2c_2, I2C_HandleTypeDef *hi2c_3, UART_HandleTypeDef *uart) {
 	app.I2C_handle = hi2c_1;
 	app.I2C_handle_graph_1 = hi2c_2;
 	app.I2C_handle_graph_2 = hi2c_3;
+	app.serial.uart = uart;
 	app.selected_item = MENU_ITEM_BLINK;
 	app.current_screen = SCREEN_MAIN_MENU;
 	app.counter = 0;
@@ -677,10 +951,14 @@ void app_init(GPIO_TypeDef *led_port, uint16_t led_pin, I2C_HandleTypeDef *hi2c_
 	app.led_port = led_port;
 
 	OLED_init(&app.OLED_main, app.I2C_handle);
-
 	SCD4X_init(&app.scd4x, app.I2C_handle);
+	bmx280_init(&app.bmx280, app.I2C_handle);
+	qmc5883l_init(&app.qmc5883L, app.I2C_handle);
 
-	BMP280_init(&app.bmp280, app.I2C_handle);
+	serial_output_init(&app.serial, app.serial.uart, 5000);
+	serial_output_send_header(&app.serial);
+	app.serial.header_sent = true;
+
 
 	OLED_init(&app.OLED_graph_1, app.I2C_handle_graph_1);
 	OLED_init(&app.OLED_graph_2, app.I2C_handle_graph_2);
@@ -689,29 +967,25 @@ void app_init(GPIO_TypeDef *led_port, uint16_t led_pin, I2C_HandleTypeDef *hi2c_
 	OLED_set_cursor(&app.OLED_main,6, 0);
 	OLED_print(&app.OLED_main,"      Roctronix");
 	OLED_set_cursor(&app.OLED_main,7, 0);
-	OLED_print(&app.OLED_main,"v0.01");
+	OLED_print(&app.OLED_main,"v0.02");
 
-	HAL_Delay(1500);
+	HAL_Delay(1000);
 	OLED_clear(&app.OLED_main);
 
 	menu_init();
 	menu_screen_draw();
 
-
+	OLED_draw_bitmap(&app.OLED_graph_2,boot_logo_r_128x64);
+	OLED_set_cursor(&app.OLED_graph_2,6, 0);
+	OLED_print(&app.OLED_graph_2,"      Roctronix");
+	OLED_set_cursor(&app.OLED_graph_2,7, 0);
+	OLED_print(&app.OLED_graph_2,"G1");
 
 	OLED_draw_bitmap(&app.OLED_graph_1,boot_logo_r_128x64);
 	OLED_set_cursor(&app.OLED_graph_1,6, 0);
 	OLED_print(&app.OLED_graph_1,"      Roctronix");
 	OLED_set_cursor(&app.OLED_graph_1,7, 0);
-	OLED_print(&app.OLED_graph_1,"G1");
-
-	OLED_draw_bitmap(&app.OLED_graph_2,boot_logo_r_128x64);
-	OLED_set_cursor(&app.OLED_graph_2,6, 0);
-	OLED_print(&app.OLED_graph_2,"      Roctronix");
-	OLED_set_cursor(&app.OLED_graph_2,7, 0);
-	OLED_print(&app.OLED_graph_2,"G2");
-
-
+	OLED_print(&app.OLED_graph_1,"G2");
 
 
 

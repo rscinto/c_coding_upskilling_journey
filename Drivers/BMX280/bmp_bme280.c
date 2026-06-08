@@ -31,7 +31,7 @@ static HAL_StatusTypeDef  bmx280_read_calibration(BMX280_Handle_t *dev)
 	}
 
 	//These need to be non zero for them to work
-	if(raw_cal_full[0] == 0 || raw_cal_full[1 == 0])
+	if(raw_cal_full[0] == 0 || raw_cal_full[1] == 0)
 	{
 		//dev->failure_count++;    //Don't update these here. Too deep. Point of call has the responsibility
 		//dev->state = SENSOR_STATE_ERROR;
@@ -113,7 +113,7 @@ HAL_StatusTypeDef  bmx280_init(BMX280_Handle_t *dev, I2C_HandleTypeDef *hi2c) {
     dev->sample_interval_ms = 5000;
     dev->failure_count = 0;
     dev->max_failures = 3;
-    dev->data_valid = false;
+    dev->data.valid = false;
     dev->initialized = false;
 
     //check for valid ID and device
@@ -164,6 +164,8 @@ HAL_StatusTypeDef  bmx280_init(BMX280_Handle_t *dev, I2C_HandleTypeDef *hi2c) {
 		dev->state = SENSOR_STATE_ERROR;
 		return HAL_ERROR;
 	}
+
+	HAL_Delay(100); //let the device catch up
 
 	if(bmx280_read_calibration(dev) != HAL_OK) // we were not able to get the calibration so data will be junk
 	{
@@ -225,7 +227,7 @@ HAL_StatusTypeDef bmx280_read_measurement(BMX280_Handle_t *dev) {
 	I2C_MEMADD_SIZE_8BIT, raw_data, 6,
 	HAL_MAX_DELAY) != HAL_OK){
 		//the read failed
-		dev->data_valid = false;
+		dev->data.valid = false;
 		return HAL_ERROR;
 	}
 
@@ -243,7 +245,7 @@ HAL_StatusTypeDef bmx280_read_measurement(BMX280_Handle_t *dev) {
 	dev->data.pressure_pa = bmx280_compensate_P_int64(dev, pressure_raw) / 256;
 
 	//TODO: need more error checking to really feel solid about this bool
-	dev->data_valid = true;
+	dev->data.valid = true;
 
 	return HAL_OK;
 }

@@ -49,6 +49,7 @@ typedef struct
     float temperature_c;
     float humidity_rh;
     bool sensor_OK;
+    bool valid;
 } SCD4X_Measurement_t;
 
 //TODO: implement later to replace original struct
@@ -68,7 +69,6 @@ typedef struct
     uint8_t failure_count;
     uint8_t max_failures;
 
-    bool data_valid;
     bool initialized;
 
 } SCD4X_Handle_t;
