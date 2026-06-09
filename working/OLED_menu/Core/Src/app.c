@@ -12,8 +12,12 @@
 #include "qmc5883L.h"
 #include "sensor_common.h"
 #include "serial_output.h"
+#include "cmsis_os.h"
+#include "graph_buffer.h"
 
 #define QMC5883L_MOUNTING_OFFSET_DEG  (-90.0f)
+
+
 
 
 typedef enum  //tracks which screen we're on
@@ -62,6 +66,10 @@ typedef struct //tracks the state of which menu item is to be selected when the 
 	OLED_Handle_t OLED_main;
 	OLED_Handle_t OLED_graph_1;
 	OLED_Handle_t OLED_graph_2;
+	Graph_Buffer_t co2_graph;
+	Graph_Buffer_t pressure_graph;
+	Graph_Buffer_t temperature_graph;
+	Graph_Buffer_t humidity_graph;
 } app_t;
 
 static app_t app = {
@@ -72,6 +80,102 @@ static app_t app = {
 		.last_blink_time = 0,
 		.blink_interval_ms = 500,
 };
+
+
+
+static void render_scd4x_c02_graph_display(void)
+{
+    char line[32];
+
+    OLED_clear_framebuffer(&app.OLED_graph_1);
+
+    OLED_draw_text_fb(&app.OLED_graph_1, 0, 0, "SCD40 CO2");
+
+    if (app.scd4x.data.valid)
+    {
+        snprintf(line, sizeof(line), "%lu ppm",
+                 (unsigned long)app.scd4x.data.co2_ppm);
+    }
+    else
+    {
+        snprintf(line, sizeof(line), "Waiting...");
+    }
+
+    OLED_draw_text_fb(&app.OLED_graph_1, 0, 10, line);
+
+    OLED_draw_graph_fb(&app.OLED_graph_1,
+                       &app.co2_graph,
+                       0,
+                       24,
+                       128,
+                       40,
+                       app.co2_graph.min_display,
+                       app.co2_graph.max_display);
+
+    OLED_flush_framebuffer(&app.OLED_graph_1);
+}
+
+
+
+static void render_bme280_pressure_graph_display(void)
+{
+    char line[32];
+
+    OLED_clear_framebuffer(&app.OLED_graph_2);
+
+    OLED_draw_text_fb(&app.OLED_graph_2, 0, 0, "BME280 PRESS");
+
+    if (app.bmx280.data.valid)
+    {
+        snprintf(line, sizeof(line), "%.1f hPa",
+                 app.bmx280.data.pressure_pa / 100.0f);
+    }
+    else
+    {
+        snprintf(line, sizeof(line), "Waiting...");
+    }
+
+    OLED_draw_text_fb(&app.OLED_graph_2, 0, 10, line);
+
+    OLED_draw_graph_fb(&app.OLED_graph_2,
+                       &app.pressure_graph,
+                       0,
+                       24,
+                       128,
+                       40,
+                       app.pressure_graph.min_display,
+                       app.pressure_graph.max_display);
+
+    OLED_flush_framebuffer(&app.OLED_graph_2);
+}
+
+
+
+
+
+
+void app_update_graph_displays(void)
+{
+    static uint32_t last_scd_draw_ms = 0;
+    static uint32_t last_bme_draw_ms = 0;
+
+    uint32_t now = HAL_GetTick();
+
+    if (now - last_scd_draw_ms >= 500)
+    {
+        last_scd_draw_ms = now;
+        render_scd4x_c02_graph_display();
+    }
+
+    if (now - last_bme_draw_ms >= 500)
+    {
+        last_bme_draw_ms = now;
+        render_bme280_pressure_graph_display();
+    }
+}
+
+
+
 
 
 
@@ -115,6 +219,12 @@ static void serial_output_send_header(Serial_Output_t *serial)
                       (uint8_t *)header,
                       strlen(header),
                       100);
+}
+
+
+void app_serial_update(void)
+{
+	serial_output_update(&app.serial);
 }
 
 void serial_output_update(Serial_Output_t *serial)
@@ -606,18 +716,21 @@ static void menu_select() {
 			app.current_screen = SCREEN_ABOUT;
 			OLED_clear(&app.OLED_main);
 			OLED_set_cursor(&app.OLED_main,0, 0);
-			OLED_print(&app.OLED_main,"She burns so bright,");
+			OLED_print(&app.OLED_main,"");
 			OLED_set_cursor(&app.OLED_main,1, 0);
-			OLED_print(&app.OLED_main,"to the world's ");
+			OLED_print(&app.OLED_main,"");
 			OLED_set_cursor(&app.OLED_main,2, 0);
-			OLED_print(&app.OLED_main,"delight,");
+			OLED_print(&app.OLED_main,"");
 			OLED_set_cursor(&app.OLED_main,3, 0);
-			OLED_print(&app.OLED_main,"Her given light,");
+			OLED_print(&app.OLED_main,"");
 			OLED_set_cursor(&app.OLED_main,4, 0);
-			OLED_print(&app.OLED_main,"Can shine in the");
+			OLED_print(&app.OLED_main,"");
 			OLED_set_cursor(&app.OLED_main,5, 0);
-			OLED_print(&app.OLED_main,"darkest night.");
-
+			OLED_print(&app.OLED_main,"");
+			//The stamina of a lioness
+			//The elegance of a countess
+			//The strength of a fortress
+			//The power of a goddess
 
 			break;
 		case MENU_ITEM_COUNT: // fall through into default. // make compiler happy including MENU_ITEM_COUNT
@@ -638,7 +751,7 @@ static void menu_select() {
 
 
 
-static void app_update_LED(void) {
+void app_update_LED(void) {
 	if (app.led_mode == LED_MODE_OFF) {
 		HAL_GPIO_WritePin(app.led_port, app.led_pin, GPIO_PIN_RESET);
 		return;
@@ -677,6 +790,7 @@ void app_update_bmx280(void)
         if (bmx280_read_measurement(&app.bmx280) == HAL_OK)
         {
             app.bmx280.failure_count = 0;
+            app.bmx280.data.valid = true;
 
             if (app.current_screen == SCREEN_BMX280)
             {
@@ -686,6 +800,7 @@ void app_update_bmx280(void)
         else
         {
         	app.bmx280.failure_count++;
+        	app.bmx280.data.valid = false;
 
             if (app.current_screen == SCREEN_BMX280)
             {
@@ -716,6 +831,7 @@ static void app_update_scd4x(void) {
 	        if (SCD4X_read_measurement(&app.scd4x) == HAL_OK)
 	        {
 	            app.scd4x.failure_count = 0;
+	            app.scd4x.data.valid = true;
 
 	            if (app.current_screen == SCREEN_SCD4X)
 	            {
@@ -725,6 +841,7 @@ static void app_update_scd4x(void) {
 	        else
 	        {
 	        	app.scd4x.failure_count++;
+	        	app.scd4x.data.valid = false;
 
 	            if (app.current_screen == SCREEN_SCD4X)
 	            {
@@ -756,12 +873,61 @@ static void menu_move_down(void) //moves cursor down on main menu.
 
 }
 
+static void menu_move_up(void) //moves cursor up on main menu.
+{
+
+    if (app.selected_item == MENU_ITEM_BLINK)
+    {
+        app.selected_item = MENU_ITEM_COUNT - 1;
+    }
+    else
+    {
+        app.selected_item--;
+    }
+
+	menu_screen_draw();
+
+}
 
 
 
+void app_handle_move_up_button(void) {
+	switch (app.current_screen) {
+	case SCREEN_MAIN_MENU:
+		menu_move_up();
+		//menu_screen_draw(); menu move down already draws
+		break;
+
+	case SCREEN_COUNTER: // we're on the counter, and we now move back to main.
+		return_to_main();
+		break;
+
+	case SCREEN_BLINK:
+	    if (app.led_mode == LED_MODE_OFF)
+	    {
+	        app.led_mode = LED_MODE_COUNT - 1;
+	    }
+	    else
+	    {
+	        app.led_mode--;
+	    }
+
+		OLED_set_cursor(&app.OLED_main,2, INDENT);
+		OLED_print(&app.OLED_main,"          ");
+		OLED_set_cursor(&app.OLED_main,2, INDENT);
+		blink_screen_draw();
+		break;
+	case SCREEN_SCD4X: // fall through and return to main.
+	case SCREEN_BMX280: // fall through and return to main.
+	case SCREEN_QMC5883L: // fall through and return to main.
+	case SCREEN_ABOUT:
+		return_to_main();
+		break;
+	}
+}
 
 
-void app_handle_move_button(void) {
+void app_handle_move_down_button(void) {
 	switch (app.current_screen) {
 	case SCREEN_MAIN_MENU:
 		menu_move_down();
@@ -873,37 +1039,42 @@ static void app_update_qmc5883L(void)
 
 
 
-static void app_update_sensors(void) {
+void app_update_sensors(void)
+{
+    static uint32_t last_graph_sample_ms = 0;
 
-	app_update_scd4x();
-	app_update_bmx280();
-	app_update_qmc5883L();
+    app_update_scd4x();
+    app_update_bmx280();
+    app_update_qmc5883L();
 
-	char line[256];
+    uint32_t now = HAL_GetTick();
 
-	    snprintf(line, sizeof(line),
-	             "%lu,%d,%.2f,%.2f,%d,%lu,%.2f,%.2f,%d,%d,%d,%d,%.1f\r\n",
-	             HAL_GetTick(),
+    if (now - last_graph_sample_ms >= GRAPH_SAMPLE_PERIOD_MS)
+    {
+        last_graph_sample_ms = now;
 
-	             app.bmx280.data.valid,
-	             app.bmx280.data.temperature_c,
-	             app.bmx280.data.pressure_pa,
+        if (app.scd4x.data.valid)
+        {
+            graph_buffer_push(&app.co2_graph,
+                              (float)app.scd4x.data.co2_ppm,
+                              true);
 
-	             app.scd4x.data.valid,  app.scd4x.data.valid,
-	             app.scd4x.data.co2_ppm,
-	             app.scd4x.data.temperature_c,
-	             app.scd4x.data.humidity_rh,
+            graph_buffer_push(&app.temperature_graph,
+                              app.scd4x.data.temperature_c,
+                              true);
 
-	             app.qmc5883L.measurement.valid,
-	             app.qmc5883L.measurement.raw_x,
-	             app.qmc5883L.measurement.raw_y,
-	             app.qmc5883L.measurement.raw_z,
-	             app.qmc5883L.measurement.heading_deg);
+            graph_buffer_push(&app.humidity_graph,
+                              app.scd4x.data.humidity_rh,
+                              true);
+        }
 
-	   // HAL_UART_Transmit(app.serial, (uint8_t *)line, strlen(line), 100);
-
-
-
+        if (app.bmx280.data.valid)
+        {
+            graph_buffer_push(&app.pressure_graph,
+                              app.bmx280.data.pressure_pa / 100.0f,
+                              true);
+        }
+    }
 }
 
 
@@ -949,6 +1120,13 @@ void app_init(GPIO_TypeDef *led_port, uint16_t led_pin, I2C_HandleTypeDef *hi2c_
 	app.led_mode = LED_MODE_OFF;
 	app.led_pin = led_pin;
 	app.led_port = led_port;
+
+	//DO NOT PUSH TO BUFFER UNLESS IT HAS INIT
+	graph_buffer_init(&app.co2_graph, 400.0f, 2000.0f);
+	graph_buffer_init(&app.pressure_graph, 950.0f, 1050.0f);
+	graph_buffer_init(&app.temperature_graph, 0.0f, 50.0f);
+	graph_buffer_init(&app.humidity_graph, 0.0f, 100.0f);
+
 
 	OLED_init(&app.OLED_main, app.I2C_handle);
 	SCD4X_init(&app.scd4x, app.I2C_handle);

@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -34,8 +35,10 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-volatile bool move_button_pressed  = false;
-volatile bool select_button_pressed = false;
+
+// TODO: add these events to UI queue
+//EXTI interrupt -> UI event queue -> Input task
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -45,10 +48,65 @@ volatile bool select_button_pressed = false;
 
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
+I2C_HandleTypeDef hi2c2;
+I2C_HandleTypeDef hi2c3;
 
-UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 
+/* Definitions for defaultTask */
+osThreadId_t defaultTaskHandle;
+const osThreadAttr_t defaultTask_attributes = {
+  .name = "defaultTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for Input_Task */
+osThreadId_t Input_TaskHandle;
+const osThreadAttr_t Input_Task_attributes = {
+  .name = "Input_Task",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityHigh,
+};
+/* Definitions for ui_event_queue */
+osMessageQueueId_t ui_event_queueHandle;
+const osMessageQueueAttr_t ui_event_queue_attributes = {
+  .name = "ui_event_queue"
+};
+/* Definitions for sensor_cmd_queue */
+osMessageQueueId_t sensor_cmd_queueHandle;
+const osMessageQueueAttr_t sensor_cmd_queue_attributes = {
+  .name = "sensor_cmd_queue"
+};
+/* Definitions for ui_state_mutex */
+osMutexId_t ui_state_mutexHandle;
+const osMutexAttr_t ui_state_mutex_attributes = {
+  .name = "ui_state_mutex"
+};
+/* Definitions for sensor_snapshot_mutex */
+osMutexId_t sensor_snapshot_mutexHandle;
+const osMutexAttr_t sensor_snapshot_mutex_attributes = {
+  .name = "sensor_snapshot_mutex"
+};
+/* Definitions for i2c1_mutex */
+osMutexId_t i2c1_mutexHandle;
+const osMutexAttr_t i2c1_mutex_attributes = {
+  .name = "i2c1_mutex"
+};
+/* Definitions for uart_mutex */
+osMutexId_t uart_mutexHandle;
+const osMutexAttr_t uart_mutex_attributes = {
+  .name = "uart_mutex"
+};
+/* Definitions for i2c2_mutex */
+osMutexId_t i2c2_mutexHandle;
+const osMutexAttr_t i2c2_mutex_attributes = {
+  .name = "i2c2_mutex"
+};
+/* Definitions for i2c3_mutex */
+osMutexId_t i2c3_mutexHandle;
+const osMutexAttr_t i2c3_mutex_attributes = {
+  .name = "i2c3_mutex"
+};
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -57,41 +115,86 @@ UART_HandleTypeDef huart2;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_I2C2_Init(void);
+static void MX_I2C3_Init(void);
 static void MX_USART2_UART_Init(void);
-static void MX_USART1_UART_Init(void);
+void StartDefaultTask(void *argument);
+void Input_Task_Func(void *argument);
+
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+
+
+
+
+
+
+
+volatile bool button_up_pending = false;
+volatile bool button_down_pending = false;
+volatile bool button_left_pending = false;
+volatile bool button_right_pending = false;
+volatile bool button_select_pending = false;
+
+
+
+
+
+
+
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-    static uint32_t last_b1_press_time = 0;
-    static uint32_t last_select_press_time = 0;
+    static uint32_t last_up_ms = 0;
+    static uint32_t last_down_ms = 0;
+    static uint32_t last_left_ms = 0;
+    static uint32_t last_right_ms = 0;
+    static uint32_t last_select_1_ms = 0;
 
     uint32_t now = HAL_GetTick();
 
-    if (GPIO_Pin == Button1_Pin_Pin)
+    if (GPIO_Pin == button_up_Pin)
     {
-        if ((now - last_b1_press_time) > 200)
+        if ((now - last_up_ms) > 150)
         {
-            last_b1_press_time = now;
-            move_button_pressed = true;
-            //HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-
+            last_up_ms = now;
+            button_up_pending = true;
         }
     }
-
-    if (GPIO_Pin == external_button_Pin)
+    else if (GPIO_Pin == button_down_Pin)
     {
-        if ((now - last_select_press_time) > 200)
+        if ((now - last_down_ms) > 150)
         {
-            last_select_press_time = now;
-            select_button_pressed = true;
-
-            //HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-
+            last_down_ms = now;
+            button_down_pending = true;
+        }
+    }
+    else if (GPIO_Pin == button_left_Pin)
+    {
+        if ((now - last_left_ms) > 150)
+        {
+            last_left_ms = now;
+            button_left_pending = true;
+        }
+    }
+    else if (GPIO_Pin == button_right_Pin)
+    {
+        if ((now - last_right_ms) > 150)
+        {
+            last_right_ms = now;
+            button_right_pending = true;
+        }
+    }
+    else if (GPIO_Pin == button_select_Pin)
+    {
+        if ((now - last_select_1_ms) > 150)
+        {
+            last_select_1_ms = now;
+            button_select_pending = true;
         }
     }
 }
@@ -124,33 +227,86 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_I2C1_Init();
+  MX_I2C2_Init();
+  MX_I2C3_Init();
   MX_USART2_UART_Init();
-  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  app_init(LD2_GPIO_Port, LD2_Pin, &hi2c1);
+  app_init(LD2_GPIO_Port, LD2_Pin, &hi2c1, &hi2c2, &hi2c3, &huart2);
   //HAL_UART_Transmit(&huart1, (uint8_t*)"hello\r\n", 7, HAL_MAX_DELAY);
   /* USER CODE END 2 */
+
+  /* Init scheduler */
+  osKernelInitialize();
+  /* Create the mutex(es) */
+  /* creation of ui_state_mutex */
+  ui_state_mutexHandle = osMutexNew(&ui_state_mutex_attributes);
+
+  /* creation of sensor_snapshot_mutex */
+  sensor_snapshot_mutexHandle = osMutexNew(&sensor_snapshot_mutex_attributes);
+
+  /* creation of i2c1_mutex */
+  i2c1_mutexHandle = osMutexNew(&i2c1_mutex_attributes);
+
+  /* creation of uart_mutex */
+  uart_mutexHandle = osMutexNew(&uart_mutex_attributes);
+
+  /* creation of i2c2_mutex */
+  i2c2_mutexHandle = osMutexNew(&i2c2_mutex_attributes);
+
+  /* creation of i2c3_mutex */
+  i2c3_mutexHandle = osMutexNew(&i2c3_mutex_attributes);
+
+  /* USER CODE BEGIN RTOS_MUTEX */
+  /* add mutexes, ... */
+  /* USER CODE END RTOS_MUTEX */
+
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* add semaphores, ... */
+  /* USER CODE END RTOS_SEMAPHORES */
+
+  /* USER CODE BEGIN RTOS_TIMERS */
+  /* start timers, add new ones, ... */
+  /* USER CODE END RTOS_TIMERS */
+
+  /* Create the queue(s) */
+  /* creation of ui_event_queue */
+  ui_event_queueHandle = osMessageQueueNew (16, sizeof(uint16_t), &ui_event_queue_attributes);
+
+  /* creation of sensor_cmd_queue */
+  sensor_cmd_queueHandle = osMessageQueueNew (16, sizeof(uint16_t), &sensor_cmd_queue_attributes);
+
+  /* USER CODE BEGIN RTOS_QUEUES */
+  /* add queues, ... */
+  /* USER CODE END RTOS_QUEUES */
+
+  /* Create the thread(s) */
+  /* creation of defaultTask */
+  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+
+  /* creation of Input_Task */
+  Input_TaskHandle = osThreadNew(Input_Task_Func, NULL, &Input_Task_attributes);
+
+  /* USER CODE BEGIN RTOS_THREADS */
+  /* add threads, ... */
+  /* USER CODE END RTOS_THREADS */
+
+  /* USER CODE BEGIN RTOS_EVENTS */
+  /* add events, ... */
+  /* USER CODE END RTOS_EVENTS */
+
+  /* Start scheduler */
+  osKernelStart();
+
+  /* We should never get here as control is now taken by the scheduler */
+
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
     /* USER CODE END WHILE */
+
     /* USER CODE BEGIN 3 */
-	    if (move_button_pressed)
-	    {
-	        move_button_pressed = false;
-	        //HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-	        app_handle_move_button();
-	    }
 
-	    if (select_button_pressed)
-	    {
-	        select_button_pressed = false;
-	        //HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-	        app_handle_select_button();
-	    }
-
-	    app_update();
   }
   /* USER CODE END 3 */
 }
@@ -237,35 +393,70 @@ static void MX_I2C1_Init(void)
 }
 
 /**
-  * @brief USART1 Initialization Function
+  * @brief I2C2 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_USART1_UART_Init(void)
+static void MX_I2C2_Init(void)
 {
 
-  /* USER CODE BEGIN USART1_Init 0 */
+  /* USER CODE BEGIN I2C2_Init 0 */
 
-  /* USER CODE END USART1_Init 0 */
+  /* USER CODE END I2C2_Init 0 */
 
-  /* USER CODE BEGIN USART1_Init 1 */
+  /* USER CODE BEGIN I2C2_Init 1 */
 
-  /* USER CODE END USART1_Init 1 */
-  huart1.Instance = USART1;
-  huart1.Init.BaudRate = 115200;
-  huart1.Init.WordLength = UART_WORDLENGTH_8B;
-  huart1.Init.StopBits = UART_STOPBITS_1;
-  huart1.Init.Parity = UART_PARITY_NONE;
-  huart1.Init.Mode = UART_MODE_TX_RX;
-  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart1) != HAL_OK)
+  /* USER CODE END I2C2_Init 1 */
+  hi2c2.Instance = I2C2;
+  hi2c2.Init.ClockSpeed = 100000;
+  hi2c2.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c2.Init.OwnAddress1 = 0;
+  hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c2.Init.OwnAddress2 = 0;
+  hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c2) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN USART1_Init 2 */
+  /* USER CODE BEGIN I2C2_Init 2 */
 
-  /* USER CODE END USART1_Init 2 */
+  /* USER CODE END I2C2_Init 2 */
+
+}
+
+/**
+  * @brief I2C3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C3_Init(void)
+{
+
+  /* USER CODE BEGIN I2C3_Init 0 */
+
+  /* USER CODE END I2C3_Init 0 */
+
+  /* USER CODE BEGIN I2C3_Init 1 */
+
+  /* USER CODE END I2C3_Init 1 */
+  hi2c3.Instance = I2C3;
+  hi2c3.Init.ClockSpeed = 100000;
+  hi2c3.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c3.Init.OwnAddress1 = 0;
+  hi2c3.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c3.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c3.Init.OwnAddress2 = 0;
+  hi2c3.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c3.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C3_Init 2 */
+
+  /* USER CODE END I2C3_Init 2 */
 
 }
 
@@ -323,17 +514,17 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : Button1_Pin_Pin */
-  GPIO_InitStruct.Pin = Button1_Pin_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(Button1_Pin_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : external_button_Pin */
-  GPIO_InitStruct.Pin = external_button_Pin;
+  /*Configure GPIO pins : button_left_Pin button_up_Pin */
+  GPIO_InitStruct.Pin = button_left_Pin|button_up_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(external_button_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : button_select_Pin button_down_Pin button_right_Pin */
+  GPIO_InitStruct.Pin = button_select_Pin|button_down_Pin|button_right_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LD2_Pin */
   GPIO_InitStruct.Pin = LD2_Pin;
@@ -343,11 +534,20 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(EXTI0_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(EXTI0_IRQn);
 
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+  HAL_NVIC_SetPriority(EXTI1_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI1_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI3_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI3_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI4_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI4_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -357,6 +557,98 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 /* USER CODE END 4 */
+
+/* USER CODE BEGIN Header_StartDefaultTask */
+/**
+  * @brief  Function implementing the defaultTask thread.
+  * @param  argument: Not used
+  * @retval None
+  */
+/* USER CODE END Header_StartDefaultTask */
+void StartDefaultTask(void *argument)
+{
+  /* USER CODE BEGIN 5 */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END 5 */
+}
+
+/* USER CODE BEGIN Header_Input_Task_Func */
+/**
+* @brief Function implementing the Input_Task thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_Input_Task_Func */
+void Input_Task_Func(void *argument)
+{
+  /* USER CODE BEGIN Input_Task_Func */
+
+  for(;;)
+  {
+      if (button_down_pending)
+      {
+          button_down_pending = false;
+          app_handle_move_down_button();
+      }
+
+      if (button_select_pending)
+      {
+          button_select_pending = false;
+          app_handle_select_button();
+      }
+
+      /*
+       * These are intentionally consumed but not connected yet.
+       * Your current app only has "move next" and "select".
+       * We will add true up/down/left/right actions later.
+       */
+      if (button_up_pending)
+      {
+          button_up_pending = false;
+    	  app_handle_move_up_button();
+      }
+
+      if (button_left_pending)
+      {
+          button_left_pending = false;
+      }
+
+      if (button_right_pending)
+      {
+          button_right_pending = false;
+      }
+
+      osDelay(10);
+  }
+
+  /* USER CODE END Input_Task_Func */
+}
+
+/**
+  * @brief  Period elapsed callback in non blocking mode
+  * @note   This function is called  when TIM6 interrupt took place, inside
+  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
+  * a global variable "uwTick" used as application time base.
+  * @param  htim : TIM handle
+  * @retval None
+  */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  /* USER CODE BEGIN Callback 0 */
+
+  /* USER CODE END Callback 0 */
+  if (htim->Instance == TIM6)
+  {
+    HAL_IncTick();
+  }
+  /* USER CODE BEGIN Callback 1 */
+
+  /* USER CODE END Callback 1 */
+}
 
 /**
   * @brief  This function is executed in case of error occurrence.
@@ -369,6 +661,7 @@ void Error_Handler(void)
   __disable_irq();
   while (1)
   {
+
   }
   /* USER CODE END Error_Handler_Debug */
 }
