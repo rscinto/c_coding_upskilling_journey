@@ -65,7 +65,35 @@ osThreadId_t Input_TaskHandle;
 const osThreadAttr_t Input_Task_attributes = {
   .name = "Input_Task",
   .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityHigh,
+  .priority = (osPriority_t) osPriorityLow,
+};
+/* Definitions for Sensor_Task */
+osThreadId_t Sensor_TaskHandle;
+const osThreadAttr_t Sensor_Task_attributes = {
+  .name = "Sensor_Task",
+  .stack_size = 1024  * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for LED_Task */
+osThreadId_t LED_TaskHandle;
+const osThreadAttr_t LED_Task_attributes = {
+  .name = "LED_Task",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
+/* Definitions for Display_Task */
+osThreadId_t Display_TaskHandle;
+const osThreadAttr_t Display_Task_attributes = {
+  .name = "Display_Task",
+  .stack_size = 1024 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
+/* Definitions for Serial_Task */
+osThreadId_t Serial_TaskHandle;
+const osThreadAttr_t Serial_Task_attributes = {
+  .name = "Serial_Task",
+  .stack_size = 1024 * 4,
+  .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for ui_event_queue */
 osMessageQueueId_t ui_event_queueHandle;
@@ -120,6 +148,10 @@ static void MX_I2C3_Init(void);
 static void MX_USART2_UART_Init(void);
 void StartDefaultTask(void *argument);
 void Input_Task_Func(void *argument);
+void Sensor_Task_Func(void *argument);
+void LED_Task_Func(void *argument);
+void Display_Task_Func(void *argument);
+void Serial_Task_Func(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -281,10 +313,30 @@ int main(void)
 
   /* Create the thread(s) */
   /* creation of defaultTask */
+  /* creation of defaultTask */
+  /* creation of defaultTask */
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
   /* creation of Input_Task */
   Input_TaskHandle = osThreadNew(Input_Task_Func, NULL, &Input_Task_attributes);
+
+  /* creation of Sensor_Task */
+  Sensor_TaskHandle = osThreadNew(Sensor_Task_Func, NULL, &Sensor_Task_attributes);
+
+  /* creation of LED_Task */
+  LED_TaskHandle = osThreadNew(LED_Task_Func, NULL, &LED_Task_attributes);
+
+  /* creation of Display_Task */
+  Display_TaskHandle = osThreadNew(Display_Task_Func, NULL, &Display_Task_attributes);
+
+  /* creation of Serial_Task */
+  Serial_TaskHandle = osThreadNew(Serial_Task_Func, NULL, &Serial_Task_attributes);
+  /*
+   * Serial task intentionally disabled while debugging graph display.
+   * Leaving app_serial_update() commented inside the task is not enough;
+   * creating the task still consumes FreeRTOS heap.
+   */
+  // Serial_TaskHandle = osThreadNew(Serial_Task_Func, NULL, &Serial_Task_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -626,6 +678,83 @@ void Input_Task_Func(void *argument)
   }
 
   /* USER CODE END Input_Task_Func */
+}
+
+/* USER CODE BEGIN Header_Sensor_Task_Func */
+/**
+* @brief Function implementing the Sensor_Task thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_Sensor_Task_Func */
+void Sensor_Task_Func(void *argument)
+{
+  /* USER CODE BEGIN Sensor_Task_Func */
+  /* Infinite loop */
+  for(;;)
+  {
+	app_update_sensors();
+    osDelay(50);
+  }
+  /* USER CODE END Sensor_Task_Func */
+}
+
+/* USER CODE BEGIN Header_LED_Task_Func */
+/**
+* @brief Function implementing the LED_Task thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_LED_Task_Func */
+void LED_Task_Func(void *argument)
+{
+  /* USER CODE BEGIN LED_Task_Func */
+  /* Infinite loop */
+  for(;;)
+  {
+	app_update_LED();
+    osDelay(50);
+  }
+  /* USER CODE END LED_Task_Func */
+}
+
+/* USER CODE BEGIN Header_Display_Task_Func */
+/**
+* @brief Function implementing the Display_Task thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_Display_Task_Func */
+void Display_Task_Func(void *argument)
+{
+  /* USER CODE BEGIN Display_Task_Func */
+  /* Infinite loop */
+  for(;;)
+  {
+	  //HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin); //todo:test
+	app_update_graph_displays();
+    osDelay(100);
+  }
+  /* USER CODE END Display_Task_Func */
+}
+
+/* USER CODE BEGIN Header_Serial_Task_Func */
+/**
+* @brief Function implementing the Serial_Task thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_Serial_Task_Func */
+void Serial_Task_Func(void *argument)
+{
+  /* USER CODE BEGIN Serial_Task_Func */
+  /* Infinite loop */
+  for(;;)
+  {
+	//app_serial_update();
+    osDelay(100);
+  }
+  /* USER CODE END Serial_Task_Func */
 }
 
 /**

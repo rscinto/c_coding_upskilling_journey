@@ -83,96 +83,15 @@ static app_t app = {
 
 
 
-static void render_scd4x_c02_graph_display(void)
-{
-    char line[32];
-
-    OLED_clear_framebuffer(&app.OLED_graph_1);
-
-    OLED_draw_text_fb(&app.OLED_graph_1, 0, 0, "SCD40 CO2");
-
-    if (app.scd4x.data.valid)
-    {
-        snprintf(line, sizeof(line), "%lu ppm",
-                 (unsigned long)app.scd4x.data.co2_ppm);
-    }
-    else
-    {
-        snprintf(line, sizeof(line), "Waiting...");
-    }
-
-    OLED_draw_text_fb(&app.OLED_graph_1, 0, 10, line);
-
-    OLED_draw_graph_fb(&app.OLED_graph_1,
-                       &app.co2_graph,
-                       0,
-                       24,
-                       128,
-                       40,
-                       app.co2_graph.min_display,
-                       app.co2_graph.max_display);
-
-    OLED_flush_framebuffer(&app.OLED_graph_1);
-}
-
-
-
-static void render_bme280_pressure_graph_display(void)
-{
-    char line[32];
-
-    OLED_clear_framebuffer(&app.OLED_graph_2);
-
-    OLED_draw_text_fb(&app.OLED_graph_2, 0, 0, "BME280 PRESS");
-
-    if (app.bmx280.data.valid)
-    {
-        snprintf(line, sizeof(line), "%.1f hPa",
-                 app.bmx280.data.pressure_pa / 100.0f);
-    }
-    else
-    {
-        snprintf(line, sizeof(line), "Waiting...");
-    }
-
-    OLED_draw_text_fb(&app.OLED_graph_2, 0, 10, line);
-
-    OLED_draw_graph_fb(&app.OLED_graph_2,
-                       &app.pressure_graph,
-                       0,
-                       24,
-                       128,
-                       40,
-                       app.pressure_graph.min_display,
-                       app.pressure_graph.max_display);
-
-    OLED_flush_framebuffer(&app.OLED_graph_2);
-}
 
 
 
 
 
 
-void app_update_graph_displays(void)
-{
-    static uint32_t last_scd_draw_ms = 0;
-    static uint32_t last_bme_draw_ms = 0;
 
-    uint32_t now = HAL_GetTick();
 
-    if (now - last_scd_draw_ms >= 500)
-    {
-        last_scd_draw_ms = now;
-        render_scd4x_c02_graph_display();
-    }
 
-    if (now - last_bme_draw_ms >= 500)
-    {
-        last_bme_draw_ms = now;
-        render_bme280_pressure_graph_display();
-    }
-}
 
 
 
@@ -716,15 +635,15 @@ static void menu_select() {
 			app.current_screen = SCREEN_ABOUT;
 			OLED_clear(&app.OLED_main);
 			OLED_set_cursor(&app.OLED_main,0, 0);
-			OLED_print(&app.OLED_main,"");
+			OLED_print(&app.OLED_main,"Sunsets are red,");
 			OLED_set_cursor(&app.OLED_main,1, 0);
-			OLED_print(&app.OLED_main,"");
+			OLED_print(&app.OLED_main,"Oceans are blue,");
 			OLED_set_cursor(&app.OLED_main,2, 0);
-			OLED_print(&app.OLED_main,"");
+			OLED_print(&app.OLED_main,"There is no river,");
 			OLED_set_cursor(&app.OLED_main,3, 0);
-			OLED_print(&app.OLED_main,"");
+			OLED_print(&app.OLED_main,"That is stronger ");
 			OLED_set_cursor(&app.OLED_main,4, 0);
-			OLED_print(&app.OLED_main,"");
+			OLED_print(&app.OLED_main,"  than you");
 			OLED_set_cursor(&app.OLED_main,5, 0);
 			OLED_print(&app.OLED_main,"");
 			//The stamina of a lioness
@@ -1053,27 +972,13 @@ void app_update_sensors(void)
     {
         last_graph_sample_ms = now;
 
-        if (app.scd4x.data.valid)
-        {
-            graph_buffer_push(&app.co2_graph,
-                              (float)app.scd4x.data.co2_ppm,
-                              true);
+        graph_buffer_push(&app.co2_graph,
+                          (float)app.scd4x.data.co2_ppm,
+                          app.scd4x.data.valid);
 
-            graph_buffer_push(&app.temperature_graph,
-                              app.scd4x.data.temperature_c,
-                              true);
-
-            graph_buffer_push(&app.humidity_graph,
-                              app.scd4x.data.humidity_rh,
-                              true);
-        }
-
-        if (app.bmx280.data.valid)
-        {
-            graph_buffer_push(&app.pressure_graph,
-                              app.bmx280.data.pressure_pa / 100.0f,
-                              true);
-        }
+        graph_buffer_push(&app.pressure_graph,
+                          app.bmx280.data.pressure_pa / 100.0f,
+                          app.bmx280.data.valid);
     }
 }
 
@@ -1168,3 +1073,122 @@ void app_init(GPIO_TypeDef *led_port, uint16_t led_pin, I2C_HandleTypeDef *hi2c_
 
 
 }
+
+static void render_bme280_pressure_graph_display(void)
+{
+    char line[32];
+
+    OLED_clear_framebuffer(&app.OLED_graph_2);
+
+    OLED_draw_text_fb(&app.OLED_graph_2, 0, 0, "BME280 PRESS");
+
+    if (app.bmx280.data.valid)
+    {
+        snprintf(line, sizeof(line), "%.1f hPa",
+                 app.bmx280.data.pressure_pa / 100.0f);
+    }
+    else
+    {
+        snprintf(line, sizeof(line), "Waiting...");
+    }
+
+    OLED_draw_text_fb(&app.OLED_graph_2, 0, 10, line);
+
+    OLED_draw_graph_fb(&app.OLED_graph_2,
+                       &app.pressure_graph,
+                       0,
+                       24,
+                       128,
+                       40,
+                       950.0f,
+                       1050.0f);
+
+    OLED_flush_framebuffer(&app.OLED_graph_2);
+}
+
+static void render_scd4x_graph_display(void)
+{
+    char line[32];
+
+    OLED_clear_framebuffer(&app.OLED_graph_1);
+
+    OLED_draw_text_fb(&app.OLED_graph_1, 0, 0, "SCD40 CO2");
+
+    if (app.scd4x.data.valid)
+    {
+        snprintf(line, sizeof(line), "%lu ppm",
+                 (unsigned long)app.scd4x.data.co2_ppm);
+    }
+    else
+    {
+        snprintf(line, sizeof(line), "Waiting...");
+    }
+
+    OLED_draw_text_fb(&app.OLED_graph_1, 0, 10, line);
+
+    OLED_draw_graph_fb(&app.OLED_graph_1,
+                       &app.co2_graph,
+                       0,
+                       24,
+                       128,
+                       40,
+                       400.0f,
+                       2000.0f);
+
+    OLED_flush_framebuffer(&app.OLED_graph_1);
+}
+
+
+void app_update_graph_displays(void)
+{
+    static uint32_t last_scd_draw_ms = 0;
+    static uint32_t last_bme_draw_ms = 0;
+
+    uint32_t now = HAL_GetTick();
+
+    if (now - last_scd_draw_ms >= 1000)
+    {
+        last_scd_draw_ms = now;
+        render_scd4x_graph_display();
+    }
+
+    if (now - last_bme_draw_ms >= 1000)
+    {
+        last_bme_draw_ms = now;
+        render_bme280_pressure_graph_display();
+    }
+}
+
+/*
+void app_update_graph_displays(void)
+{
+    static uint32_t last_draw_ms = 0;
+    static uint32_t draw_count = 0;
+
+    uint32_t now = HAL_GetTick();
+
+    if (now - last_draw_ms < 1000)
+    {
+        return;
+    }
+
+    last_draw_ms = now;
+    draw_count++;
+
+    char line[32];
+
+    OLED_clear(&app.OLED_graph_1);
+    OLED_set_cursor(&app.OLED_graph_1, 0, 0);
+    OLED_print(&app.OLED_graph_1, "GRAPH TASK RUN");
+    OLED_set_cursor(&app.OLED_graph_1, 2, 0);
+    snprintf(line, sizeof(line), "count %lu", (unsigned long)draw_count);
+    OLED_print(&app.OLED_graph_1, line);
+
+    OLED_clear(&app.OLED_graph_2);
+    OLED_set_cursor(&app.OLED_graph_2, 0, 0);
+    OLED_print(&app.OLED_graph_2, "GRAPH TASK RUN");
+    OLED_set_cursor(&app.OLED_graph_2, 2, 0);
+    snprintf(line, sizeof(line), "count %lu", (unsigned long)draw_count);
+    OLED_print(&app.OLED_graph_2, line);
+}
+*/
