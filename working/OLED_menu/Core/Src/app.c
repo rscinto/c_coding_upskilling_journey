@@ -14,6 +14,7 @@
 #include "serial_output.h"
 #include "cmsis_os.h"
 #include "graph_buffer.h"
+#include "cmsis_os.h"
 
 #define QMC5883L_MOUNTING_OFFSET_DEG  (-90.0f)
 
@@ -161,6 +162,8 @@ typedef struct //tracks the state of which menu item is to be selected when the 
 	Graph_Buffer_t temperature_graph;
 	Graph_Buffer_t humidity_graph;
 
+	osMutexId_t graph_mutex;
+
 
 } app_t;
 
@@ -179,7 +182,14 @@ static app_t app = {
 
 
 
+void app_create_rtos_objects(void)
+{
+    const osMutexAttr_t graph_mutex_attributes = {
+        .name = "graph_mutex"
+    };
 
+    app.graph_mutex = osMutexNew(&graph_mutex_attributes);
+}
 
 
 
@@ -1179,8 +1189,14 @@ void app_update_sensors(void)
 
     uint32_t now = HAL_GetTick();
 
+
+
     if (now - last_graph_sample_ms >= GRAPH_SAMPLE_PERIOD_MS)
     {
+        if (app.graph_mutex != NULL)
+        {
+            osMutexAcquire(app.graph_mutex, osWaitForever);
+        }
         last_graph_sample_ms = now;
 
         graph_buffer_push(&app.co2_graph,
@@ -1198,7 +1214,13 @@ void app_update_sensors(void)
         graph_buffer_push(&app.pressure_graph,
                           app.bmx280.data.pressure_pa / 100.0f,
                           app.bmx280.data.valid);
+        if (app.graph_mutex != NULL)
+        {
+            osMutexRelease(app.graph_mutex);
+        }
     }
+
+
 }
 
 
@@ -1236,11 +1258,14 @@ void app_init(GPIO_TypeDef *led_port, uint16_t led_pin, I2C_HandleTypeDef *hi2c_
 	app.led_mode = LED_MODE_OFF;
 	app.led_pin = led_pin;
 	app.led_port = led_port;
+	app.graph_mutex = NULL;
+
+
 
 	//DO NOT PUSH TO BUFFER UNLESS IT HAS INIT
 	graph_buffer_init(&app.co2_graph, 400.0f, 2000.0f);
 	graph_buffer_init(&app.pressure_graph, 950.0f, 1050.0f);
-	graph_buffer_init(&app.temperature_graph, 0.0f, 50.0f);
+	graph_buffer_init(&app.temperature_graph, 15.0f, 35.0f);
 	graph_buffer_init(&app.humidity_graph, 0.0f, 100.0f);
 
 
@@ -1376,8 +1401,8 @@ static void render_scd4x_graph_display_temp(OLED_Handle_t *tgt_OLED)
                        24,
                        128,
                        40,
-                       0.0f,
-                       50.0f);
+                       15.0f,
+                       35.0f);
 
     OLED_flush_framebuffer(tgt_OLED);
 }
@@ -1423,22 +1448,26 @@ static void render_scd4x_graph_display_rh(OLED_Handle_t *tgt_OLED)
 void app_update_graph_displays(void)
 {
     static uint32_t last_scd_draw_ms = 0;
-    static uint32_t last_bme_draw_ms = 0;
 
     uint32_t now = HAL_GetTick();
 
     if (now - last_scd_draw_ms >= 1000)
     {
         last_scd_draw_ms = now;
-        render_scd4x_graph_display_co2(&app.OLED_graph_1);
+        if (app.graph_mutex != NULL)
+        {
+            osMutexAcquire(app.graph_mutex, osWaitForever);
+        }
+
+			render_scd4x_graph_display_co2(&app.OLED_graph_1);
+			render_scd4x_graph_display_temp(&app.OLED_graph_2);
+
+        if (app.graph_mutex != NULL)
+        {
+            osMutexRelease(app.graph_mutex);
+        }
     }
 
-    if (now - last_bme_draw_ms >= 1000)
-    {
-        last_bme_draw_ms = now;
-        //render_bme280_pressure_graph_display(app.OLED_graph_2);
-        render_scd4x_graph_display_temp(&app.OLED_graph_2);
-    }
 }
 
 /*

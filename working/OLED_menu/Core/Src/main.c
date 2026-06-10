@@ -18,7 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "cmsis_os.h"
+
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -64,7 +64,7 @@ const osThreadAttr_t defaultTask_attributes = {
 osThreadId_t Input_TaskHandle;
 const osThreadAttr_t Input_Task_attributes = {
   .name = "Input_Task",
-  .stack_size = 128 * 4,
+  .stack_size = 1024  * 4,
   .priority = (osPriority_t) osPriorityHigh,
 };
 /* Definitions for Sensor_Task */
@@ -85,7 +85,7 @@ const osThreadAttr_t LED_Task_attributes = {
 osThreadId_t Display_TaskHandle;
 const osThreadAttr_t Display_Task_attributes = {
   .name = "Display_Task",
-  .stack_size = 2048  * 4,
+  .stack_size = 1024   * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for Serial_Task */
@@ -270,6 +270,8 @@ int main(void)
   /* Init scheduler */
   osKernelInitialize();
   /* Create the mutex(es) */
+
+
   /* creation of ui_state_mutex */
   ui_state_mutexHandle = osMutexNew(&ui_state_mutex_attributes);
 
@@ -289,6 +291,7 @@ int main(void)
   i2c3_mutexHandle = osMutexNew(&i2c3_mutex_attributes);
 
   /* USER CODE BEGIN RTOS_MUTEX */
+  app_create_rtos_objects();
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
 
@@ -330,7 +333,7 @@ int main(void)
   Display_TaskHandle = osThreadNew(Display_Task_Func, NULL, &Display_Task_attributes);
 
   /* creation of Serial_Task */
-  Serial_TaskHandle = osThreadNew(Serial_Task_Func, NULL, &Serial_Task_attributes);
+  //Serial_TaskHandle = osThreadNew(Serial_Task_Func, NULL, &Serial_Task_attributes);
   /*
    * Serial task intentionally disabled while debugging graph display.
    * Leaving app_serial_update() commented inside the task is not enough;
@@ -744,17 +747,18 @@ void Display_Task_Func(void *argument)
 * @retval None
 */
 /* USER CODE END Header_Serial_Task_Func */
+
 void Serial_Task_Func(void *argument)
-{
-  /* USER CODE BEGIN Serial_Task_Func */
-  /* Infinite loop */
-  for(;;)
-  {
-	//app_serial_update();
-    osDelay(100);
-  }
-  /* USER CODE END Serial_Task_Func */
-}
+	{
+	  /* USER CODE BEGIN Serial_Task_Func */
+	  /* Infinite loop */
+	  for(;;)
+	  {
+		//app_serial_update();
+		osDelay(100);
+	  }
+	  /* USER CODE END Serial_Task_Func */
+	}
 
 /**
   * @brief  Period elapsed callback in non blocking mode
