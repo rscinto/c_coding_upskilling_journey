@@ -22,8 +22,10 @@
 
 typedef enum  //tracks which screen we're on
 {
-	SCREEN_MAIN_MENU, SCREEN_BLINK, SCREEN_COUNTER, SCREEN_SCD4X, SCREEN_BMX280, SCREEN_QMC5883L, SCREEN_ABOUT
+	SCREEN_MAIN_MENU, SCREEN_BLINK, SCREEN_COUNTER, SCREEN_SCD4X_DATA, SCREEN_SCD4X_MENU, SCREEN_BMX280, SCREEN_QMC5883L, SCREEN_ABOUT
 } screen_t;
+
+
 
 typedef enum //tracks where the cursor is pointing.
 {
@@ -35,6 +37,91 @@ typedef enum //tracks where the cursor is pointing.
 	MENU_ITEM_ABOUT,
 	MENU_ITEM_COUNT    //keeps track of the size of the menu for cursor wrapping
 } menu_item_t;
+
+
+typedef enum //tracks where the cursor in submenu
+{
+	SUB_MENU_ITEM_DATA_SCD,// ==0
+	SUB_MENU_ITEM_GRAPH_1_temperature,
+	SUB_MENU_ITEM_GRAPH_1_humidity,
+	SUB_MENU_ITEM_GRAPH_1_co2,
+	SUB_MENU_ITEM_GRAPH_2_temperature,
+	SUB_MENU_ITEM_GRAPH_2_humidity,
+	SUB_MENU_ITEM_GRAPH_2_co2,
+	SUB_MENU_ITEM_SENSITIVITY_SCD,
+	SUB_MENU_ITEM_REFRESH_RATE_SCD,
+	SUB_MENU_ITEM_COUNT_SCD    //keeps track of the size of the menu for cursor wrapping
+} sub_menu_scd_item_t;
+
+typedef enum //tracks where the cursor in submenu
+{
+	SUB_MENU_ITEM_DATA_BMX,// ==0
+	SUB_MENU_ITEM_GRAPH_1_pressure,
+	SUB_MENU_ITEM_GRAPH_2_pressure,
+	SUB_MENU_ITEM_ITEM_SENSITIVITY_BMX,
+	SUB_MENU_ITEM_REFRESH_RATE_BMX,
+	SUB_MENU_ITEM_COUNT_BMX    //keeps track of the size of the menu for cursor wrapping
+} sub_menu_bmx_item_t;
+
+typedef enum //tracks where the cursor in submenu
+{
+	SUB_MENU_ITEM_DATA_QMC,// ==0
+	SUB_MENU_ITEM_GRAPH_1_heading,
+	SUB_MENU_ITEM_ITEM_GRAPH_1_gauss,
+	SUB_MENU_ITEM_GRAPH_2_heading,
+	SUB_MENU_ITEM_GRAPH_2_gauss,
+	SUB_MENU_ITEM_SENSITIVITY_QMC,
+	SUB_MENU_ITEM_REFRESH_RATE_QMC,
+	SUB_MENU_ITEM_COUNT_QMC    //keeps track of the size of the menu for cursor wrapping
+} sub_menu_qmc_item_t;
+
+typedef enum
+{
+	SENSOR_SENSITIVITY_SCD_LOW,
+	SENSOR_SENSITIVITY_SCD_MEDIUM,
+	SENSOR_SENSITIVITY_SCD_HIGH,
+	SENSOR_SENSITIVITY_SCD_COUNT,
+}sensor_sensitivity_scd;
+
+typedef enum
+{
+	SENSOR_SENSITIVITY_BMX_LOW,
+	SENSOR_SENSITIVITY_BMX_MEDIUM,
+	SENSOR_SENSITIVITY_BMX_HIGH,
+	SENSOR_SENSITIVITY_BMX_COUNT,
+}sensor_sensitivity_bmx;
+
+typedef enum
+{
+	SENSOR_SENSITIVITY_QMC_LOW,
+	SENSOR_SENSITIVITY_QMC_MEDIUM,
+	SENSOR_SENSITIVITY_QMC_HIGH,
+	SENSOR_SENSITIVITY_QMC_COUNT,
+}sensor_sensitivity_qmc;
+
+typedef enum
+{
+	SENSOR_REFRESH_RATE_SCD_LOW,
+	SENSOR_REFRESH_RATE_SCD_MEDIUM,
+	SENSOR_REFRESH_RATE_SCD_HIGH,
+	SENSOR_REFRESH_RATE_SCD_COUNT,
+}sensor_refresh_rate_scd;
+
+typedef enum
+{
+	SENSOR_REFRESH_RATE_BMX_LOW,
+	SENSOR_REFRESH_RATE_BMX_MEDIUM,
+	SENSOR_REFRESH_RATE_BMX_HIGH,
+	SENSOR_REFRESH_RATE_BMX_COUNT,
+}sensor_refresh_rate_bmx;
+
+typedef enum
+{
+	SENSOR_REFRESH_RATE_QMC_LOW,
+	SENSOR_REFRESH_RATE_QMC_MEDIUM,
+	SENSOR_REFRESH_RATE_QMC_HIGH,
+	SENSOR_REFRESH_RATE_QMC_COUNT,
+}sensor_refresh_rate_qmc;
 
 typedef enum //tracks LED state
 {
@@ -51,7 +138,7 @@ typedef struct //tracks the state of which menu item is to be selected when the 
 	I2C_HandleTypeDef *I2C_handle_graph_1;
 	I2C_HandleTypeDef *I2C_handle_graph_2;
 	UART_HandleTypeDef *uart;
-	menu_item_t selected_item;
+	menu_item_t main_menu_selected_item;
 	screen_t current_screen;
 	led_mode_t led_mode;
 	uint32_t counter;
@@ -59,9 +146,12 @@ typedef struct //tracks the state of which menu item is to be selected when the 
 	uint32_t blink_interval_ms;
 	GPIO_TypeDef *led_port;
 	uint16_t led_pin;
+
 	SCD4X_Handle_t scd4x;
+	sub_menu_scd_item_t sub_menu_scd_item;
 	BMX280_Handle_t bmx280;
 	QMC5883L_Handle_t qmc5883L;
+
 	Serial_Output_t serial;
 	OLED_Handle_t OLED_main;
 	OLED_Handle_t OLED_graph_1;
@@ -70,10 +160,12 @@ typedef struct //tracks the state of which menu item is to be selected when the 
 	Graph_Buffer_t pressure_graph;
 	Graph_Buffer_t temperature_graph;
 	Graph_Buffer_t humidity_graph;
+
+
 } app_t;
 
 static app_t app = {
-		.selected_item = MENU_ITEM_BLINK,
+		.main_menu_selected_item = MENU_ITEM_BLINK,
 		.current_screen = SCREEN_MAIN_MENU,
 		.led_mode = LED_MODE_OFF,
 		.counter = 0,
@@ -202,7 +294,7 @@ static void format_heading_QMC5883L(char *buffer, size_t size)
 
 
 
-static void draw_data_QMC5883L(void) {
+static void draw_data_QMC5883L_screen(void) {
 
 	OLED_clear(&app.OLED_main);
 	OLED_set_cursor(&app.OLED_main,0, 0);
@@ -285,19 +377,11 @@ static void format_press_BMX280(char *buffer, size_t size)
 
 
 
-static void draw_data_BMX280(void) {
+static void draw_data_BMX280_screen(void) {
 
 	OLED_clear(&app.OLED_main);
 	OLED_set_cursor(&app.OLED_main,0, 0);
 	OLED_print(&app.OLED_main,"Data BMX280");
-
-	//need some while data is good logic later.
-	// need to be able to update in real time
-	//char buffer[16];
-
-	//fill buffer with clean temperature
-	//format_temp(buffer, sizeof(buffer));
-
 	OLED_set_cursor(&app.OLED_main,1, 0);
 	OLED_print(&app.OLED_main,"Pressure (Pa):");
 	//OLED_print(&app.OLED_main,buffer);
@@ -307,8 +391,6 @@ static void draw_data_BMX280(void) {
 static void update_BMX280_data(void)
 {
 		char buffer[16];
-
-		//fill buffer with clean temperature
 		format_press_BMX280(buffer, sizeof(buffer));
 		OLED_set_cursor(&app.OLED_main,2, 0);
 		OLED_print(&app.OLED_main,buffer);
@@ -365,9 +447,52 @@ static void format_c02(char *buffer, size_t size)
 
 
 
+static void scd4x_menu_screen_draw(void)
+{
+	//don't change the state. just draw please
+	//app.current_screen = SCREEN_MAIN_MENU;
+	OLED_set_cursor(&app.OLED_main,0, 0);
+	OLED_print(&app.OLED_main,"SCD4X");
+
+	OLED_set_cursor(&app.OLED_main,1, 0);
+	OLED_print(&app.OLED_main,app.sub_menu_scd_item == SUB_MENU_ITEM_DATA_SCD ? ">" : " ");
+	OLED_set_cursor(&app.OLED_main,1, INDENT);
+	OLED_print(&app.OLED_main,"SCD4X Data");
+
+	OLED_set_cursor(&app.OLED_main,2, 0);
+	OLED_print(&app.OLED_main,app.sub_menu_scd_item == SUB_MENU_ITEM_GRAPH_1_temperature ? ">" : " ");
+	OLED_set_cursor(&app.OLED_main,2, INDENT);
+	OLED_print(&app.OLED_main,"Temp. to Graph 1");
+
+	OLED_set_cursor(&app.OLED_main,3, 0);
+	OLED_print(&app.OLED_main,app.sub_menu_scd_item == SUB_MENU_ITEM_GRAPH_1_humidity? ">" : " ");
+	OLED_set_cursor(&app.OLED_main,3, INDENT);
+	OLED_print(&app.OLED_main,"Humid. to Graph 1");
+
+	OLED_set_cursor(&app.OLED_main,4, 0);
+	OLED_print(&app.OLED_main,app.sub_menu_scd_item == SUB_MENU_ITEM_GRAPH_1_co2 ? ">" : " ");
+	OLED_set_cursor(&app.OLED_main,4, INDENT);
+	OLED_print(&app.OLED_main,"CO2 to Graph 1");
+
+	OLED_set_cursor(&app.OLED_main,5, 0);
+	OLED_print(&app.OLED_main,app.sub_menu_scd_item == SUB_MENU_ITEM_GRAPH_2_temperature ? ">" : " ");
+	OLED_set_cursor(&app.OLED_main,5, INDENT);
+	OLED_print(&app.OLED_main,"Temp. to Graph 2");
+
+	OLED_set_cursor(&app.OLED_main,6, 0);
+	OLED_print(&app.OLED_main,app.sub_menu_scd_item == SUB_MENU_ITEM_GRAPH_2_humidity ? ">" : " ");
+	OLED_set_cursor(&app.OLED_main,6, INDENT);
+	OLED_print(&app.OLED_main,"Humid. to Graph 2");
+}
+
+static void scd4x_menu_screen_init() {
+	OLED_clear(&app.OLED_main);
+	app.sub_menu_scd_item = SUB_MENU_ITEM_DATA_SCD;
+	scd4x_menu_screen_draw();
+}
 
 
-static void draw_data(void) {
+static void draw_data_scd4x_screen(void) {
 
 	OLED_clear(&app.OLED_main);
 	OLED_set_cursor(&app.OLED_main,0, 0);
@@ -459,7 +584,7 @@ static void update_scd4x_data_fail(void)
 
 
 
-static void menu_screen_draw(void) {
+static void main_menu_screen_draw(void) {
 	//OLED_clear(); // causes flutter whenever we move down.
 
 	//don't change the state. just draw please
@@ -468,38 +593,46 @@ static void menu_screen_draw(void) {
 	OLED_print(&app.OLED_main,"Main Menu");
 
 	OLED_set_cursor(&app.OLED_main,1, 0);
-	OLED_print(&app.OLED_main,app.selected_item == MENU_ITEM_BLINK ? ">" : " ");
+	OLED_print(&app.OLED_main,app.main_menu_selected_item == MENU_ITEM_BLINK ? ">" : " ");
 	OLED_set_cursor(&app.OLED_main,1, INDENT);
 	OLED_print(&app.OLED_main,"Blink LED");
 
 	OLED_set_cursor(&app.OLED_main,2, 0);
-	OLED_print(&app.OLED_main,app.selected_item == MENU_ITEM_COUNTER ? ">" : " ");
+	OLED_print(&app.OLED_main,app.main_menu_selected_item == MENU_ITEM_COUNTER ? ">" : " ");
 	OLED_set_cursor(&app.OLED_main,2, INDENT);
 	OLED_print(&app.OLED_main,"Counter");
 
 	OLED_set_cursor(&app.OLED_main,3, 0);
-	OLED_print(&app.OLED_main,app.selected_item == MENU_ITEM_SCD4X ? ">" : " ");
+	OLED_print(&app.OLED_main,app.main_menu_selected_item == MENU_ITEM_SCD4X ? ">" : " ");
 	OLED_set_cursor(&app.OLED_main,3, INDENT);
 	OLED_print(&app.OLED_main,"Data SCD4X");
 
 	OLED_set_cursor(&app.OLED_main,4, 0);
-	OLED_print(&app.OLED_main,app.selected_item == MENU_ITEM_BMX280 ? ">" : " ");
+	OLED_print(&app.OLED_main,app.main_menu_selected_item == MENU_ITEM_BMX280 ? ">" : " ");
 	OLED_set_cursor(&app.OLED_main,4, INDENT);
 	OLED_print(&app.OLED_main,"Data BMX280");
 
 	OLED_set_cursor(&app.OLED_main,5, 0);
-	OLED_print(&app.OLED_main,app.selected_item == MENU_ITEM_QMC5883L ? ">" : " ");
+	OLED_print(&app.OLED_main,app.main_menu_selected_item == MENU_ITEM_QMC5883L ? ">" : " ");
 	OLED_set_cursor(&app.OLED_main,5, INDENT);
 	OLED_print(&app.OLED_main,"Data QMC5883L");
 
 	OLED_set_cursor(&app.OLED_main,6, 0);
-	OLED_print(&app.OLED_main,app.selected_item == MENU_ITEM_ABOUT ? ">" : " ");
+	OLED_print(&app.OLED_main,app.main_menu_selected_item == MENU_ITEM_ABOUT ? ">" : " ");
 	OLED_set_cursor(&app.OLED_main,6, INDENT);
 	OLED_print(&app.OLED_main,"About");
 }
 
 
+static void menu_init() {
+	OLED_clear(&app.OLED_main);
 
+	app.main_menu_selected_item = MENU_ITEM_BLINK;
+	app.current_screen = SCREEN_MAIN_MENU;
+	app.led_mode = LED_MODE_OFF;
+	app.counter = 0;
+	main_menu_screen_draw();
+}
 
 
 
@@ -536,6 +669,23 @@ static void blink_screen_draw(void) {
 }
 
 
+void scd4x_menu_select(void)
+{
+	switch (app.sub_menu_scd_item) {
+	//todo add more sub menu items and actions like sending graphs to screens
+	case SUB_MENU_ITEM_DATA_SCD:
+		app.current_screen = SCREEN_SCD4X_DATA;
+		if (app.scd4x.data.valid == true) {
+			draw_data_scd4x_screen();
+			update_scd4x_data();
+		} else {
+			draw_data_scd4x_screen(); // needs to draw whole screen
+			update_scd4x_data_fail(); //fill in error parts
+		}
+		break;
+
+	}
+}
 
 
 
@@ -543,9 +693,8 @@ static void blink_screen_draw(void) {
 static void return_to_main(void) {
 	app.current_screen = SCREEN_MAIN_MENU;
 	OLED_clear(&app.OLED_main);
-	menu_screen_draw();
+	main_menu_screen_draw();
 }
-
 
 
 
@@ -554,7 +703,7 @@ static void return_to_main(void) {
 static void menu_select() {
 	if (app.current_screen == SCREEN_MAIN_MENU) //means we're on the main menu and we need to enter one of the screens
 			{
-		switch (app.selected_item) {
+		switch (app.main_menu_selected_item) {
 		case MENU_ITEM_BLINK:
 			app.current_screen = SCREEN_BLINK;
 			OLED_clear(&app.OLED_main);
@@ -578,55 +727,47 @@ static void menu_select() {
 					(unsigned long) app.counter);
 			OLED_print(&app.OLED_main,buffer);
 			break;
-		}
+			}
 		case MENU_ITEM_SCD4X: {
-			app.current_screen = SCREEN_SCD4X;
-			if(app.scd4x.data.valid == true)
-			{
-				draw_data();
-				update_scd4x_data();
-			}
-			else
-			{
-				draw_data();// needs to draw whole screen
-				update_scd4x_data_fail(); //fill in error parts
-			}
+			app.current_screen = SCREEN_SCD4X_MENU;
+			scd4x_menu_screen_init();
+			scd4x_menu_screen_draw();
 			break;
-		}
+			}
 		case MENU_ITEM_BMX280: {
 			app.current_screen = SCREEN_BMX280;
 			if(app.bmx280.data.valid == true)
 			{
-				draw_data_BMX280();
+				draw_data_BMX280_screen();
 				update_BMX280_data();
 			}
 			else
 			{
-				//draw_data_BMX280();// needs to draw whole screen
-				draw_data_BMX280();
+				//draw_data_BMX280_screen();// needs to draw whole screen
+				draw_data_BMX280_screen();
 				update_BMX280_data_fail();
 			}
 			break;
-		}
+			}
 		case MENU_ITEM_QMC5883L: {
 			app.current_screen = SCREEN_QMC5883L;
 
 			if(app.qmc5883L.calibrated == false)
 			{
 				calibrating_message_QMC5883L();
-				qmc5883l_calibrate(&app.qmc5883L, 15000); //todo: update to 15000 when finished testing
+				qmc5883l_calibrate(&app.qmc5883L, 15000);
 				OLED_clear(&app.OLED_main);
-				draw_data_QMC5883L();
+				draw_data_QMC5883L_screen();
 			}
 			else if(app.qmc5883L.measurement.valid == true)
 			{
-				draw_data_QMC5883L();
+				draw_data_QMC5883L_screen();
 				update_QMC5883L_data();
 
 			}
 			else if(app.qmc5883L.measurement.valid == false)
 			{
-				draw_data_QMC5883L();
+				draw_data_QMC5883L_screen();
 				update_QMC5883L_data_fail();
 			}
 			break;
@@ -658,14 +799,63 @@ static void menu_select() {
 			return_to_main();
 			break;
 		}
-	} else //we're in a screen and we need to go back to the main menu.
+	}
+	else if (app.current_screen == SCREEN_SCD4X_MENU) {
+		scd4x_menu_select();
+	}
+	else if(app.current_screen == SCREEN_COUNTER)
+	{
+		//do nothing
+	}
+	else if(app.current_screen == SCREEN_BLINK)
+	{
+		//do nothing
+	}
+	else if(app.current_screen == SCREEN_ABOUT)
+	{
+		//do nothing
+	}
+	else //we're in a screen and we need to go back to the main menu.
 	{
 		return_to_main();
 	}
-
 }
 
 
+
+static void enter_current_selection(void)
+{
+	switch (app.current_screen) {
+	case SCREEN_MAIN_MENU:
+		menu_select();
+		break;
+	case SCREEN_BLINK:
+		return_to_main();
+		break;
+	case SCREEN_COUNTER: { //case braces to definitively make the buffer have local scope.
+		app.current_screen = SCREEN_COUNTER;
+		OLED_set_cursor(&app.OLED_main,2, INDENT);
+		OLED_print(&app.OLED_main,"          ");
+		OLED_set_cursor(&app.OLED_main,2, INDENT);
+		char buffer[12];
+		snprintf(buffer, sizeof(buffer), "%lu", (unsigned long) app.counter);
+		OLED_print(&app.OLED_main,buffer);
+		break;
+	}
+	case SCREEN_ABOUT: //do nothing
+		break;
+	case SCREEN_SCD4X_DATA: //do nothing we're at max depth
+		break;
+	case SCREEN_SCD4X_MENU:
+		menu_select();
+		break;
+	case SCREEN_BMX280: // fall through and return to main.
+	case SCREEN_QMC5883L: // fall through and return to main.
+	default: // if current state gets corrupt, just go back to main
+		return_to_main();
+		break;
+	}
+}
 
 
 
@@ -752,7 +942,7 @@ static void app_update_scd4x(void) {
 	            app.scd4x.failure_count = 0;
 	            app.scd4x.data.valid = true;
 
-	            if (app.current_screen == SCREEN_SCD4X)
+	            if (app.current_screen == SCREEN_SCD4X_DATA)
 	            {
 	                update_scd4x_data();
 	            }
@@ -762,7 +952,7 @@ static void app_update_scd4x(void) {
 	        	app.scd4x.failure_count++;
 	        	app.scd4x.data.valid = false;
 
-	            if (app.current_screen == SCREEN_SCD4X)
+	            if (app.current_screen == SCREEN_SCD4X_DATA)
 	            {
 	                update_scd4x_data_fail();
 	            }
@@ -783,38 +973,38 @@ static void app_update_scd4x(void) {
 
 static void menu_move_down(void) //moves cursor down on main menu.
 {
-	app.selected_item++;
+	app.main_menu_selected_item++;
 
-	if (app.selected_item >= MENU_ITEM_COUNT) {
-		app.selected_item = MENU_ITEM_BLINK; //wrapping
+	if (app.main_menu_selected_item >= MENU_ITEM_COUNT) {
+		app.main_menu_selected_item = MENU_ITEM_BLINK; //wrapping
 	}
-	menu_screen_draw();
+	main_menu_screen_draw();
 
 }
 
 static void menu_move_up(void) //moves cursor up on main menu.
 {
 
-    if (app.selected_item == MENU_ITEM_BLINK)
+    if (app.main_menu_selected_item == MENU_ITEM_BLINK)
     {
-        app.selected_item = MENU_ITEM_COUNT - 1;
+        app.main_menu_selected_item = MENU_ITEM_COUNT - 1;
     }
     else
     {
-        app.selected_item--;
+        app.main_menu_selected_item--;
     }
 
-	menu_screen_draw();
+	main_menu_screen_draw();
 
 }
 
 
 
-void app_handle_move_up_button(void) {
+void app_handle_up_button(void) {
 	switch (app.current_screen) {
 	case SCREEN_MAIN_MENU:
 		menu_move_up();
-		//menu_screen_draw(); menu move down already draws
+		//main_menu_screen_draw(); menu move down already draws
 		break;
 
 	case SCREEN_COUNTER: // we're on the counter, and we now move back to main.
@@ -836,7 +1026,12 @@ void app_handle_move_up_button(void) {
 		OLED_set_cursor(&app.OLED_main,2, INDENT);
 		blink_screen_draw();
 		break;
-	case SCREEN_SCD4X: // fall through and return to main.
+	case SCREEN_SCD4X_DATA: // fall through and return to main.
+		//at this depth this button does nothing
+		break;
+	case SCREEN_SCD4X_MENU:
+		//todo : insert modded menu move up that accounts for new sub menus
+		break;
 	case SCREEN_BMX280: // fall through and return to main.
 	case SCREEN_QMC5883L: // fall through and return to main.
 	case SCREEN_ABOUT:
@@ -846,11 +1041,11 @@ void app_handle_move_up_button(void) {
 }
 
 
-void app_handle_move_down_button(void) {
+void app_handle_down_button(void) {
 	switch (app.current_screen) {
 	case SCREEN_MAIN_MENU:
 		menu_move_down();
-		//menu_screen_draw(); menu move down already draws
+		//main_menu_screen_draw(); menu move down already draws
 		break;
 
 	case SCREEN_COUNTER: // we're on the counter, and we now move back to main.
@@ -869,7 +1064,11 @@ void app_handle_move_down_button(void) {
 		OLED_set_cursor(&app.OLED_main,2, INDENT);
 		blink_screen_draw();
 		break;
-	case SCREEN_SCD4X: // fall through and return to main.
+	case SCREEN_SCD4X_DATA: // fall through and return to main.
+		break; //we do nothing on the data screen
+	case SCREEN_SCD4X_MENU:
+		//todo: use a modded version of menu move down that accounts for sub menus
+		break;
 	case SCREEN_BMX280: // fall through and return to main.
 	case SCREEN_QMC5883L: // fall through and return to main.
 	case SCREEN_ABOUT:
@@ -879,38 +1078,50 @@ void app_handle_move_down_button(void) {
 }
 
 
+void app_handle_left_button(void)
+{
+	switch (app.current_screen) {
+	case SCREEN_MAIN_MENU:
+		//menu_move_down();
+		//main_menu_screen_draw(); menu move down already draws
+		// do nothing
+		break;
+
+	case SCREEN_COUNTER: // we're on the counter, and we now move back to main.
+		return_to_main();
+		break;
+
+	case SCREEN_BLINK:
+	case SCREEN_SCD4X_DATA: // fall through and return to main.
+		app.current_screen = SCREEN_SCD4X_MENU;
+		scd4x_menu_screen_init();
+		scd4x_menu_screen_draw();
+		break;
+	case SCREEN_SCD4X_MENU:
+		return_to_main();
+		break;
+	case SCREEN_BMX280: // fall through and return to main.
+	case SCREEN_QMC5883L: // fall through and return to main.
+	case SCREEN_ABOUT:
+		return_to_main();
+		break;
+	}
+}
+
+
+void app_handle_right_button(void)
+{
+
+	enter_current_selection();
+}
+
 
 
 
 
 void app_handle_select_button(void) {
 	update_counter(); //increments any time the select button is pressed.
-
-	switch (app.current_screen) {
-	case SCREEN_MAIN_MENU:
-		menu_select();
-		break;
-	case SCREEN_BLINK:
-		return_to_main();
-		break;
-	case SCREEN_COUNTER: { //case braces to definitively make the buffer have local scope.
-		app.current_screen = SCREEN_COUNTER;
-		OLED_set_cursor(&app.OLED_main,2, INDENT);
-		OLED_print(&app.OLED_main,"          ");
-		OLED_set_cursor(&app.OLED_main,2, INDENT);
-		char buffer[12];
-		snprintf(buffer, sizeof(buffer), "%lu", (unsigned long) app.counter);
-		OLED_print(&app.OLED_main,buffer);
-		break;
-	}
-	case SCREEN_ABOUT: //falls through to main
-	case SCREEN_SCD4X: //fall through and return to main
-	case SCREEN_BMX280: // fall through and return to main.
-	case SCREEN_QMC5883L: // fall through and return to main.
-	default: // if current state gets corrupt, just go back to main
-		return_to_main();
-		break;
-	}
+	enter_current_selection();
 
 }
 
@@ -940,7 +1151,7 @@ static void app_update_qmc5883L(void)
         {
         	app.qmc5883L.failure_count++;
 
-            if (app.current_screen == SCREEN_SCD4X)
+            if (app.current_screen == SCREEN_SCD4X_DATA)
             {
                 //update_scd4x_data_fail();
             }
@@ -976,6 +1187,14 @@ void app_update_sensors(void)
                           (float)app.scd4x.data.co2_ppm,
                           app.scd4x.data.valid);
 
+        graph_buffer_push(&app.temperature_graph,
+                          (float)app.scd4x.data.temperature_c,
+                          app.scd4x.data.valid);
+
+        graph_buffer_push(&app.humidity_graph,
+                          app.scd4x.data.humidity_rh,
+                          app.scd4x.data.valid);
+
         graph_buffer_push(&app.pressure_graph,
                           app.bmx280.data.pressure_pa / 100.0f,
                           app.bmx280.data.valid);
@@ -999,15 +1218,7 @@ void app_update(void) {
 
 
 
-static void menu_init() {
-	OLED_clear(&app.OLED_main);
 
-	app.selected_item = MENU_ITEM_BLINK;
-	app.current_screen = SCREEN_MAIN_MENU;
-	app.led_mode = LED_MODE_OFF;
-	app.counter = 0;
-	menu_screen_draw();
-}
 
 
 
@@ -1019,7 +1230,7 @@ void app_init(GPIO_TypeDef *led_port, uint16_t led_pin, I2C_HandleTypeDef *hi2c_
 	app.I2C_handle_graph_1 = hi2c_2;
 	app.I2C_handle_graph_2 = hi2c_3;
 	app.serial.uart = uart;
-	app.selected_item = MENU_ITEM_BLINK;
+	app.main_menu_selected_item = MENU_ITEM_BLINK;
 	app.current_screen = SCREEN_MAIN_MENU;
 	app.counter = 0;
 	app.led_mode = LED_MODE_OFF;
@@ -1056,7 +1267,7 @@ void app_init(GPIO_TypeDef *led_port, uint16_t led_pin, I2C_HandleTypeDef *hi2c_
 	OLED_clear(&app.OLED_main);
 
 	menu_init();
-	menu_screen_draw();
+	main_menu_screen_draw();
 
 	OLED_draw_bitmap(&app.OLED_graph_2,boot_logo_r_128x64);
 	OLED_set_cursor(&app.OLED_graph_2,6, 0);
@@ -1074,13 +1285,13 @@ void app_init(GPIO_TypeDef *led_port, uint16_t led_pin, I2C_HandleTypeDef *hi2c_
 
 }
 
-static void render_bme280_pressure_graph_display(void)
+static void render_bme280_pressure_graph_display(OLED_Handle_t *tgt_OLED)
 {
     char line[32];
 
-    OLED_clear_framebuffer(&app.OLED_graph_2);
+    OLED_clear_framebuffer(tgt_OLED);
 
-    OLED_draw_text_fb(&app.OLED_graph_2, 0, 0, "BME280 PRESS");
+    OLED_draw_text_fb(tgt_OLED, 0, 0, "BME280 PRESS");
 
     if (app.bmx280.data.valid)
     {
@@ -1092,9 +1303,9 @@ static void render_bme280_pressure_graph_display(void)
         snprintf(line, sizeof(line), "Waiting...");
     }
 
-    OLED_draw_text_fb(&app.OLED_graph_2, 0, 10, line);
+    OLED_draw_text_fb(tgt_OLED, 0, 10, line);
 
-    OLED_draw_graph_fb(&app.OLED_graph_2,
+    OLED_draw_graph_fb(tgt_OLED,
                        &app.pressure_graph,
                        0,
                        24,
@@ -1103,16 +1314,16 @@ static void render_bme280_pressure_graph_display(void)
                        950.0f,
                        1050.0f);
 
-    OLED_flush_framebuffer(&app.OLED_graph_2);
+    OLED_flush_framebuffer(tgt_OLED);
 }
 
-static void render_scd4x_graph_display(void)
+static void render_scd4x_graph_display_co2(OLED_Handle_t *tgt_OLED)
 {
     char line[32];
 
-    OLED_clear_framebuffer(&app.OLED_graph_1);
+    OLED_clear_framebuffer(tgt_OLED);
 
-    OLED_draw_text_fb(&app.OLED_graph_1, 0, 0, "SCD40 CO2");
+    OLED_draw_text_fb(tgt_OLED, 0, 0, "SCD40 CO2");
 
     if (app.scd4x.data.valid)
     {
@@ -1124,9 +1335,9 @@ static void render_scd4x_graph_display(void)
         snprintf(line, sizeof(line), "Waiting...");
     }
 
-    OLED_draw_text_fb(&app.OLED_graph_1, 0, 10, line);
+    OLED_draw_text_fb(tgt_OLED, 0, 10, line);
 
-    OLED_draw_graph_fb(&app.OLED_graph_1,
+    OLED_draw_graph_fb(tgt_OLED,
                        &app.co2_graph,
                        0,
                        24,
@@ -1135,9 +1346,79 @@ static void render_scd4x_graph_display(void)
                        400.0f,
                        2000.0f);
 
-    OLED_flush_framebuffer(&app.OLED_graph_1);
+    OLED_flush_framebuffer(tgt_OLED);
 }
 
+static void render_scd4x_graph_display_temp(OLED_Handle_t *tgt_OLED)
+{
+    char line[32];
+
+    OLED_clear_framebuffer(tgt_OLED);
+
+    OLED_draw_text_fb(tgt_OLED, 0, 0, "SCD40 Temperature");
+
+    if (app.scd4x.data.valid)
+    {
+    	snprintf(line, sizeof(line),
+    	         "%.1f C",
+    	         app.scd4x.data.temperature_c);
+    }
+    else
+    {
+        snprintf(line, sizeof(line), "Waiting...");
+    }
+
+    OLED_draw_text_fb(tgt_OLED, 0, 10, line);
+
+    OLED_draw_graph_fb(tgt_OLED,
+                       &app.temperature_graph,
+                       0,
+                       24,
+                       128,
+                       40,
+                       0.0f,
+                       50.0f);
+
+    OLED_flush_framebuffer(tgt_OLED);
+}
+
+
+
+
+
+
+static void render_scd4x_graph_display_rh(OLED_Handle_t *tgt_OLED)
+{
+    char line[32];
+
+    OLED_clear_framebuffer(tgt_OLED);
+
+    OLED_draw_text_fb(tgt_OLED, 0, 0, "SCD40 Humidity");
+
+    if (app.scd4x.data.valid)
+    {
+    	snprintf(line, sizeof(line),
+    	         "%.1f %%RH",
+    	         app.scd4x.data.humidity_rh);
+    }
+    else
+    {
+        snprintf(line, sizeof(line), "Waiting...");
+    }
+
+    OLED_draw_text_fb(tgt_OLED, 0, 10, line);
+
+    OLED_draw_graph_fb(tgt_OLED,
+                       &app.humidity_graph,
+                       0,
+                       24,
+                       128,
+                       40,
+                       0.0f,
+                       100.0f);
+
+    OLED_flush_framebuffer(tgt_OLED);
+}
 
 void app_update_graph_displays(void)
 {
@@ -1149,13 +1430,14 @@ void app_update_graph_displays(void)
     if (now - last_scd_draw_ms >= 1000)
     {
         last_scd_draw_ms = now;
-        render_scd4x_graph_display();
+        render_scd4x_graph_display_co2(&app.OLED_graph_1);
     }
 
     if (now - last_bme_draw_ms >= 1000)
     {
         last_bme_draw_ms = now;
-        render_bme280_pressure_graph_display();
+        //render_bme280_pressure_graph_display(app.OLED_graph_2);
+        render_scd4x_graph_display_temp(&app.OLED_graph_2);
     }
 }
 

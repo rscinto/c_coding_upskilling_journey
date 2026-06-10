@@ -65,7 +65,7 @@ osThreadId_t Input_TaskHandle;
 const osThreadAttr_t Input_Task_attributes = {
   .name = "Input_Task",
   .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+  .priority = (osPriority_t) osPriorityHigh,
 };
 /* Definitions for Sensor_Task */
 osThreadId_t Sensor_TaskHandle;
@@ -85,8 +85,8 @@ const osThreadAttr_t LED_Task_attributes = {
 osThreadId_t Display_TaskHandle;
 const osThreadAttr_t Display_Task_attributes = {
   .name = "Display_Task",
-  .stack_size = 1024 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+  .stack_size = 2048  * 4,
+  .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for Serial_Task */
 osThreadId_t Serial_TaskHandle;
@@ -644,7 +644,7 @@ void Input_Task_Func(void *argument)
       if (button_down_pending)
       {
           button_down_pending = false;
-          app_handle_move_down_button();
+          app_handle_down_button();
       }
 
       if (button_select_pending)
@@ -653,25 +653,24 @@ void Input_Task_Func(void *argument)
           app_handle_select_button();
       }
 
-      /*
-       * These are intentionally consumed but not connected yet.
-       * Your current app only has "move next" and "select".
-       * We will add true up/down/left/right actions later.
-       */
+
+
       if (button_up_pending)
       {
           button_up_pending = false;
-    	  app_handle_move_up_button();
+          app_handle_up_button();
       }
 
       if (button_left_pending)
       {
           button_left_pending = false;
+          app_handle_left_button();
       }
 
       if (button_right_pending)
       {
           button_right_pending = false;
+          app_handle_right_button();
       }
 
       osDelay(10);
