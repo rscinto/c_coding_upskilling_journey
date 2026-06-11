@@ -149,7 +149,8 @@ typedef struct //tracks the state of which menu item is to be selected when the 
 	uint16_t led_pin;
 
 	SCD4X_Handle_t scd4x;
-	sub_menu_scd_item_t sub_menu_scd_item;
+	sub_menu_scd_item_t sub_menu_scd_selected_index;
+	sub_menu_scd_item_t sub_menu_scd_top_item;
 	BMX280_Handle_t bmx280;
 	QMC5883L_Handle_t qmc5883L;
 
@@ -163,7 +164,7 @@ typedef struct //tracks the state of which menu item is to be selected when the 
 	Graph_Buffer_t humidity_graph;
 
 	osMutexId_t graph_mutex;
-
+	osMutexId_t i2c1_mutex;
 
 } app_t;
 
@@ -182,20 +183,37 @@ static app_t app = {
 
 
 
-void app_create_rtos_objects(void)
+void app_create_rtos_objects(osMutexId_t i2c1_mutex)
 {
     const osMutexAttr_t graph_mutex_attributes = {
         .name = "graph_mutex"
     };
 
     app.graph_mutex = osMutexNew(&graph_mutex_attributes);
+
+    app.i2c1_mutex = i2c1_mutex;
 }
 
+ void app_i2c1_lock(void)
+{
+    if (app.i2c1_mutex != NULL)
+    {
+        osStatus_t status = osMutexAcquire(app.i2c1_mutex, 100);
 
+        if (status != osOK)
+        {
+            //Error_Handler(); //trap for nested locks or locks that never got returned
+        }
+    }
+}
 
-
-
-
+ void app_i2c1_unlock(void)
+{
+    if (app.i2c1_mutex != NULL)
+    {
+        osMutexRelease(app.i2c1_mutex);
+    }
+}
 
 
 
@@ -306,6 +324,7 @@ static void format_heading_QMC5883L(char *buffer, size_t size)
 
 static void draw_data_QMC5883L_screen(void) {
 
+
 	OLED_clear(&app.OLED_main);
 	OLED_set_cursor(&app.OLED_main,0, 0);
 	OLED_print(&app.OLED_main,"Data QMC5883L");
@@ -316,10 +335,13 @@ static void draw_data_QMC5883L_screen(void) {
 	char buffer[16];
 	format_heading_QMC5883L(buffer, sizeof(buffer));
 	OLED_print(&app.OLED_main, buffer);
+
+
 }
 
 
 static void calibrating_message_QMC5883L(void) {
+
 
 	OLED_clear(&app.OLED_main);
 	OLED_set_cursor(&app.OLED_main,0, 0);
@@ -332,11 +354,15 @@ static void calibrating_message_QMC5883L(void) {
 	OLED_print(&app.OLED_main,"Move device in many");
 	OLED_set_cursor(&app.OLED_main,4, 0);
 	OLED_print(&app.OLED_main,"orientations");
+
+
 }
 
 
 static void update_QMC5883L_data(void)
 {
+
+
     char buffer[16];
 
     OLED_set_cursor(&app.OLED_main, 2, 0);
@@ -345,6 +371,8 @@ static void update_QMC5883L_data(void)
     OLED_set_cursor(&app.OLED_main, 2, 0);
     format_heading_QMC5883L(buffer, sizeof(buffer));
     OLED_print(&app.OLED_main, buffer);
+
+
 }
 
 
@@ -355,10 +383,15 @@ static void update_QMC5883L_data(void)
 
 static void update_QMC5883L_data_fail(void)
 {
-		OLED_set_cursor(&app.OLED_main,2, 0);
-		OLED_print(&app.OLED_main,"      ");
-		OLED_set_cursor(&app.OLED_main,2, 0);
-		OLED_print(&app.OLED_main,"Error");
+
+
+
+	OLED_set_cursor(&app.OLED_main,2, 0);
+	OLED_print(&app.OLED_main,"      ");
+	OLED_set_cursor(&app.OLED_main,2, 0);
+	OLED_print(&app.OLED_main,"Error");
+
+
 
 }
 
@@ -389,6 +422,7 @@ static void format_press_BMX280(char *buffer, size_t size)
 
 static void draw_data_BMX280_screen(void) {
 
+
 	OLED_clear(&app.OLED_main);
 	OLED_set_cursor(&app.OLED_main,0, 0);
 	OLED_print(&app.OLED_main,"Data BMX280");
@@ -396,14 +430,20 @@ static void draw_data_BMX280_screen(void) {
 	OLED_print(&app.OLED_main,"Pressure (Pa):");
 	//OLED_print(&app.OLED_main,buffer);
 
+
+
 }
 
 static void update_BMX280_data(void)
 {
-		char buffer[16];
-		format_press_BMX280(buffer, sizeof(buffer));
-		OLED_set_cursor(&app.OLED_main,2, 0);
-		OLED_print(&app.OLED_main,buffer);
+
+
+	char buffer[16];
+	format_press_BMX280(buffer, sizeof(buffer));
+	OLED_set_cursor(&app.OLED_main,2, 0);
+	OLED_print(&app.OLED_main,buffer);
+
+
 }
 
 
@@ -414,10 +454,11 @@ static void update_BMX280_data(void)
 
 static void update_BMX280_data_fail(void)
 {
-		OLED_set_cursor(&app.OLED_main,2, 0);
-		OLED_print(&app.OLED_main,"      ");
-		OLED_set_cursor(&app.OLED_main,2, 0);
-		OLED_print(&app.OLED_main,"Error");
+
+	OLED_set_cursor(&app.OLED_main,2, 0);
+	OLED_print(&app.OLED_main,"      ");
+	OLED_set_cursor(&app.OLED_main,2, 0);
+	OLED_print(&app.OLED_main,"Error");
 
 }
 
@@ -455,50 +496,74 @@ static void format_c02(char *buffer, size_t size)
     snprintf(buffer, size, "%d", app.scd4x.data.co2_ppm);
 }
 
+#define SCD4X_MENU_TITLE_ROW      0
+#define SCD4X_MENU_FIRST_ROW      1
+#define SCD4X_MENU_VISIBLE_ITEMS  6
+
+static const char *scd4x_menu_labels[SUB_MENU_ITEM_COUNT_SCD] =
+{
+    "SCD4X Data",
+    "Temp. Graph 1",
+    "Humid. Graph 1",
+    "CO2 Graph 1",
+    "Temp. Graph 2",
+    "Humid. Graph 2",
+    "CO2 Graph 2",
+    "Sensitivity",
+    "Refresh Rate"
+};
 
 
 static void scd4x_menu_screen_draw(void)
 {
-	//don't change the state. just draw please
-	//app.current_screen = SCREEN_MAIN_MENU;
-	OLED_set_cursor(&app.OLED_main,0, 0);
-	OLED_print(&app.OLED_main,"SCD4X");
 
-	OLED_set_cursor(&app.OLED_main,1, 0);
-	OLED_print(&app.OLED_main,app.sub_menu_scd_item == SUB_MENU_ITEM_DATA_SCD ? ">" : " ");
-	OLED_set_cursor(&app.OLED_main,1, INDENT);
-	OLED_print(&app.OLED_main,"SCD4X Data");
 
-	OLED_set_cursor(&app.OLED_main,2, 0);
-	OLED_print(&app.OLED_main,app.sub_menu_scd_item == SUB_MENU_ITEM_GRAPH_1_temperature ? ">" : " ");
-	OLED_set_cursor(&app.OLED_main,2, INDENT);
-	OLED_print(&app.OLED_main,"Temp. to Graph 1");
+	for(int visible_row = 0; visible_row < SCD4X_MENU_VISIBLE_ITEMS; visible_row++)
+	{
+		int item_index = app.sub_menu_scd_top_item + visible_row;
 
-	OLED_set_cursor(&app.OLED_main,3, 0);
-	OLED_print(&app.OLED_main,app.sub_menu_scd_item == SUB_MENU_ITEM_GRAPH_1_humidity? ">" : " ");
-	OLED_set_cursor(&app.OLED_main,3, INDENT);
-	OLED_print(&app.OLED_main,"Humid. to Graph 1");
+		if(item_index>= SUB_MENU_ITEM_COUNT_SCD)
+		{
+			break;
+		}
 
-	OLED_set_cursor(&app.OLED_main,4, 0);
-	OLED_print(&app.OLED_main,app.sub_menu_scd_item == SUB_MENU_ITEM_GRAPH_1_co2 ? ">" : " ");
-	OLED_set_cursor(&app.OLED_main,4, INDENT);
-	OLED_print(&app.OLED_main,"CO2 to Graph 1");
+        int oled_row = visible_row + 1;   // row 0 is title, items start at row 1
 
-	OLED_set_cursor(&app.OLED_main,5, 0);
-	OLED_print(&app.OLED_main,app.sub_menu_scd_item == SUB_MENU_ITEM_GRAPH_2_temperature ? ">" : " ");
-	OLED_set_cursor(&app.OLED_main,5, INDENT);
-	OLED_print(&app.OLED_main,"Temp. to Graph 2");
 
-	OLED_set_cursor(&app.OLED_main,6, 0);
-	OLED_print(&app.OLED_main,app.sub_menu_scd_item == SUB_MENU_ITEM_GRAPH_2_humidity ? ">" : " ");
-	OLED_set_cursor(&app.OLED_main,6, INDENT);
-	OLED_print(&app.OLED_main,"Humid. to Graph 2");
+        OLED_set_cursor(&app.OLED_main, oled_row, 0);
+
+        if (item_index == app.sub_menu_scd_selected_index)
+        {
+            OLED_print(&app.OLED_main, ">");
+        }
+        else
+        {
+            OLED_print(&app.OLED_main, " ");
+        }
+
+        OLED_set_cursor(&app.OLED_main, oled_row, INDENT);
+		OLED_print(&app.OLED_main,scd4x_menu_labels[item_index]);
+
+
+
+	}
+
 }
 
 static void scd4x_menu_screen_init() {
+
 	OLED_clear(&app.OLED_main);
-	app.sub_menu_scd_item = SUB_MENU_ITEM_DATA_SCD;
+	app.sub_menu_scd_selected_index = SUB_MENU_ITEM_DATA_SCD;
+	app.sub_menu_scd_top_item = SUB_MENU_ITEM_DATA_SCD;
+
+	//clear the screen
+	OLED_clear(&app.OLED_main);
+	//Set cursor and Print title
+	OLED_set_cursor(&app.OLED_main,0, 0);
+	OLED_print(&app.OLED_main,"SCD40 Menu");
+
 	scd4x_menu_screen_draw();
+
 }
 
 
@@ -532,8 +597,58 @@ static void draw_data_scd4x_screen(void) {
 	OLED_set_cursor(&app.OLED_main,3, 0);
 	OLED_print(&app.OLED_main,"CO2 (ppm): ");
 	OLED_print(&app.OLED_main,buffer);
+
 }
 
+static void scd4x_menu_move_down(void) //moves cursor down on main menu.
+{
+	app.sub_menu_scd_selected_index++;
+
+	if (app.sub_menu_scd_selected_index >= SUB_MENU_ITEM_COUNT_SCD) {
+		app.sub_menu_scd_selected_index = SUB_MENU_ITEM_DATA_SCD;
+		app.sub_menu_scd_top_item = SUB_MENU_ITEM_DATA_SCD;
+	}
+	else if (app.sub_menu_scd_selected_index >= app.sub_menu_scd_top_item + SCD4X_MENU_VISIBLE_ITEMS)
+	{
+		app.sub_menu_scd_top_item++;
+	}
+
+
+	scd4x_menu_screen_draw();
+
+
+}
+
+static void scd4x_menu_move_up(void) //moves cursor up on main menu.
+{
+
+    if (app.sub_menu_scd_selected_index == SUB_MENU_ITEM_DATA_SCD)
+    {
+        app.sub_menu_scd_selected_index = SUB_MENU_ITEM_COUNT_SCD - 1;
+
+        if (SUB_MENU_ITEM_COUNT_SCD > SCD4X_MENU_VISIBLE_ITEMS) //const conditions for smaller menus later for other devices
+        {
+            app.sub_menu_scd_top_item =
+                SUB_MENU_ITEM_COUNT_SCD - SCD4X_MENU_VISIBLE_ITEMS;
+        }
+        else
+        {
+            app.sub_menu_scd_top_item = SUB_MENU_ITEM_DATA_SCD;
+        }
+    }
+    else
+    {
+        app.sub_menu_scd_selected_index--;
+
+        if (app.sub_menu_scd_selected_index < app.sub_menu_scd_top_item)
+        {
+            app.sub_menu_scd_top_item--;
+        }
+    }
+
+    scd4x_menu_screen_draw();
+
+}
 
 
 
@@ -562,6 +677,7 @@ static void update_scd4x_data(void)
 		OLED_print(&app.OLED_main,"     ");
 		OLED_set_cursor(&app.OLED_main,3, CO2_VALUE_COL);
 		OLED_print(&app.OLED_main,buffer);
+
 }
 
 
@@ -572,20 +688,75 @@ static void update_scd4x_data(void)
 
 static void update_scd4x_data_fail(void)
 {
-		OLED_set_cursor(&app.OLED_main,1, TEMP_VALUE_COL);
-		OLED_print(&app.OLED_main,"    ");
-		OLED_set_cursor(&app.OLED_main,1, TEMP_VALUE_COL);
-		OLED_print(&app.OLED_main,"Error");
 
-		OLED_set_cursor(&app.OLED_main,2, HUM_VALUE_COL);
-		OLED_print(&app.OLED_main,"    ");
-		OLED_set_cursor(&app.OLED_main,2, HUM_VALUE_COL);
-		OLED_print(&app.OLED_main,"Error");
+	OLED_set_cursor(&app.OLED_main,1, TEMP_VALUE_COL);
+	OLED_print(&app.OLED_main,"    ");
+	OLED_set_cursor(&app.OLED_main,1, TEMP_VALUE_COL);
+	OLED_print(&app.OLED_main,"Error");
 
-		OLED_set_cursor(&app.OLED_main,3, CO2_VALUE_COL);
-		OLED_print(&app.OLED_main,"    ");
-		OLED_set_cursor(&app.OLED_main,3, CO2_VALUE_COL);
-		OLED_print(&app.OLED_main,"Error");
+	OLED_set_cursor(&app.OLED_main,2, HUM_VALUE_COL);
+	OLED_print(&app.OLED_main,"    ");
+	OLED_set_cursor(&app.OLED_main,2, HUM_VALUE_COL);
+	OLED_print(&app.OLED_main,"Error");
+
+	OLED_set_cursor(&app.OLED_main,3, CO2_VALUE_COL);
+	OLED_print(&app.OLED_main,"    ");
+	OLED_set_cursor(&app.OLED_main,3, CO2_VALUE_COL);
+	OLED_print(&app.OLED_main,"Error");
+
+}
+
+
+
+void scd4x_menu_select(void)
+{
+	switch (app.sub_menu_scd_selected_index) {
+	//todo add more sub menu items and actions like sending graphs to screens
+	case SUB_MENU_ITEM_DATA_SCD:
+		app.current_screen = SCREEN_SCD4X_DATA;
+		if (app.scd4x.data.valid == true) {
+			draw_data_scd4x_screen();
+			update_scd4x_data();
+		} else {
+			draw_data_scd4x_screen(); // needs to draw whole screen
+			update_scd4x_data_fail(); //fill in error parts
+		}
+		break;
+
+	}
+}
+
+static void render_scd4x_graph_display_temp(OLED_Handle_t *tgt_OLED)
+{
+    char line[32];
+
+    OLED_clear_framebuffer(tgt_OLED);
+
+    OLED_draw_text_fb(tgt_OLED, 0, 0, "SCD40 Temperature");
+
+    if (app.scd4x.data.valid)
+    {
+    	snprintf(line, sizeof(line),
+    	         "%.1f C",
+    	         app.scd4x.data.temperature_c);
+    }
+    else
+    {
+        snprintf(line, sizeof(line), "Waiting...");
+    }
+
+    OLED_draw_text_fb(tgt_OLED, 0, 10, line);
+
+    OLED_draw_graph_fb(tgt_OLED,
+                       &app.temperature_graph,
+                       0,
+                       24,
+                       128,
+                       40,
+                       15.0f,
+                       35.0f);
+
+    OLED_flush_framebuffer(tgt_OLED);
 }
 
 
@@ -593,9 +764,45 @@ static void update_scd4x_data_fail(void)
 
 
 
+static void render_scd4x_graph_display_rh(OLED_Handle_t *tgt_OLED)
+{
+    char line[32];
+
+    OLED_clear_framebuffer(tgt_OLED);
+
+    OLED_draw_text_fb(tgt_OLED, 0, 0, "SCD40 Humidity");
+
+    if (app.scd4x.data.valid)
+    {
+    	snprintf(line, sizeof(line),
+    	         "%.1f %%RH",
+    	         app.scd4x.data.humidity_rh);
+    }
+    else
+    {
+        snprintf(line, sizeof(line), "Waiting...");
+    }
+
+    OLED_draw_text_fb(tgt_OLED, 0, 10, line);
+
+    OLED_draw_graph_fb(tgt_OLED,
+                       &app.humidity_graph,
+                       0,
+                       24,
+                       128,
+                       40,
+                       0.0f,
+                       100.0f);
+
+    OLED_flush_framebuffer(tgt_OLED);
+}
+
+
+
 
 static void main_menu_screen_draw(void) {
 	//OLED_clear(); // causes flutter whenever we move down.
+
 
 	//don't change the state. just draw please
 	//app.current_screen = SCREEN_MAIN_MENU;
@@ -631,10 +838,13 @@ static void main_menu_screen_draw(void) {
 	OLED_print(&app.OLED_main,app.main_menu_selected_item == MENU_ITEM_ABOUT ? ">" : " ");
 	OLED_set_cursor(&app.OLED_main,6, INDENT);
 	OLED_print(&app.OLED_main,"About");
+
+
 }
 
 
 static void menu_init() {
+
 	OLED_clear(&app.OLED_main);
 
 	app.main_menu_selected_item = MENU_ITEM_BLINK;
@@ -656,6 +866,7 @@ static void update_counter() {
 
 
 static void blink_screen_draw(void) {
+
 	switch (app.led_mode) {
 	case LED_MODE_OFF:
 		OLED_set_cursor(&app.OLED_main,2, INDENT);
@@ -676,33 +887,19 @@ static void blink_screen_draw(void) {
 	case LED_MODE_COUNT:
 		break;
 	}
+
 }
 
 
-void scd4x_menu_select(void)
-{
-	switch (app.sub_menu_scd_item) {
-	//todo add more sub menu items and actions like sending graphs to screens
-	case SUB_MENU_ITEM_DATA_SCD:
-		app.current_screen = SCREEN_SCD4X_DATA;
-		if (app.scd4x.data.valid == true) {
-			draw_data_scd4x_screen();
-			update_scd4x_data();
-		} else {
-			draw_data_scd4x_screen(); // needs to draw whole screen
-			update_scd4x_data_fail(); //fill in error parts
-		}
-		break;
-
-	}
-}
 
 
 
 
 static void return_to_main(void) {
 	app.current_screen = SCREEN_MAIN_MENU;
+
 	OLED_clear(&app.OLED_main);
+
 	main_menu_screen_draw();
 }
 
@@ -711,20 +908,23 @@ static void return_to_main(void) {
 
 
 static void menu_select() {
+
 	if (app.current_screen == SCREEN_MAIN_MENU) //means we're on the main menu and we need to enter one of the screens
 			{
 		switch (app.main_menu_selected_item) {
 		case MENU_ITEM_BLINK:
+
 			app.current_screen = SCREEN_BLINK;
 			OLED_clear(&app.OLED_main);
 			OLED_set_cursor(&app.OLED_main,0, 0);
 			OLED_print(&app.OLED_main,"Blink Mode");
 			blink_screen_draw();
-			// set some app state saying we are now in blink screen
+
 			break;
 
 		case MENU_ITEM_COUNTER: {
 			app.current_screen = SCREEN_COUNTER;
+
 			OLED_clear(&app.OLED_main);
 			OLED_set_cursor(&app.OLED_main,0, 0);
 			OLED_print(&app.OLED_main,"Counter");
@@ -736,12 +936,15 @@ static void menu_select() {
 			snprintf(buffer, sizeof(buffer), "%lu",
 					(unsigned long) app.counter);
 			OLED_print(&app.OLED_main,buffer);
+
 			break;
 			}
 		case MENU_ITEM_SCD4X: {
 			app.current_screen = SCREEN_SCD4X_MENU;
 			scd4x_menu_screen_init();
+
 			scd4x_menu_screen_draw();
+
 			break;
 			}
 		case MENU_ITEM_BMX280: {
@@ -783,6 +986,7 @@ static void menu_select() {
 			break;
 		}
 		case MENU_ITEM_ABOUT:
+
 			app.current_screen = SCREEN_ABOUT;
 			OLED_clear(&app.OLED_main);
 			OLED_set_cursor(&app.OLED_main,0, 0);
@@ -797,6 +1001,7 @@ static void menu_select() {
 			OLED_print(&app.OLED_main,"  than you");
 			OLED_set_cursor(&app.OLED_main,5, 0);
 			OLED_print(&app.OLED_main,"");
+
 			//The stamina of a lioness
 			//The elegance of a countess
 			//The strength of a fortress
@@ -829,12 +1034,14 @@ static void menu_select() {
 	{
 		return_to_main();
 	}
+
 }
 
 
 
 static void enter_current_selection(void)
 {
+
 	switch (app.current_screen) {
 	case SCREEN_MAIN_MENU:
 		menu_select();
@@ -844,12 +1051,14 @@ static void enter_current_selection(void)
 		break;
 	case SCREEN_COUNTER: { //case braces to definitively make the buffer have local scope.
 		app.current_screen = SCREEN_COUNTER;
+
 		OLED_set_cursor(&app.OLED_main,2, INDENT);
 		OLED_print(&app.OLED_main,"          ");
 		OLED_set_cursor(&app.OLED_main,2, INDENT);
 		char buffer[12];
 		snprintf(buffer, sizeof(buffer), "%lu", (unsigned long) app.counter);
 		OLED_print(&app.OLED_main,buffer);
+
 		break;
 	}
 	case SCREEN_ABOUT: //do nothing
@@ -865,6 +1074,7 @@ static void enter_current_selection(void)
 		return_to_main();
 		break;
 	}
+
 }
 
 
@@ -932,6 +1142,7 @@ void app_update_bmx280(void)
             	bmx280_init(&app.bmx280, app.I2C_handle);
             }
         }
+
     }
 
 }
@@ -946,6 +1157,7 @@ static void app_update_scd4x(void) {
 	    if (HAL_GetTick() - app.scd4x.last_sample_time >= app.scd4x.sample_interval_ms)
 	    {
 	    	app.scd4x.last_sample_time = HAL_GetTick();
+
 
 	        if (SCD4X_read_measurement(&app.scd4x) == HAL_OK)
 	        {
@@ -973,6 +1185,7 @@ static void app_update_scd4x(void) {
 	                SCD4X_init(&app.scd4x, app.I2C_handle);
 	            }
 	        }
+
 	    }
 }
 
@@ -1010,7 +1223,9 @@ static void menu_move_up(void) //moves cursor up on main menu.
 
 
 
+
 void app_handle_up_button(void) {
+
 	switch (app.current_screen) {
 	case SCREEN_MAIN_MENU:
 		menu_move_up();
@@ -1022,6 +1237,7 @@ void app_handle_up_button(void) {
 		break;
 
 	case SCREEN_BLINK:
+
 	    if (app.led_mode == LED_MODE_OFF)
 	    {
 	        app.led_mode = LED_MODE_COUNT - 1;
@@ -1035,12 +1251,13 @@ void app_handle_up_button(void) {
 		OLED_print(&app.OLED_main,"          ");
 		OLED_set_cursor(&app.OLED_main,2, INDENT);
 		blink_screen_draw();
+
 		break;
 	case SCREEN_SCD4X_DATA: // fall through and return to main.
 		//at this depth this button does nothing
 		break;
 	case SCREEN_SCD4X_MENU:
-		//todo : insert modded menu move up that accounts for new sub menus
+		scd4x_menu_move_up();
 		break;
 	case SCREEN_BMX280: // fall through and return to main.
 	case SCREEN_QMC5883L: // fall through and return to main.
@@ -1048,10 +1265,12 @@ void app_handle_up_button(void) {
 		return_to_main();
 		break;
 	}
+
 }
 
 
 void app_handle_down_button(void) {
+
 	switch (app.current_screen) {
 	case SCREEN_MAIN_MENU:
 		menu_move_down();
@@ -1077,7 +1296,7 @@ void app_handle_down_button(void) {
 	case SCREEN_SCD4X_DATA: // fall through and return to main.
 		break; //we do nothing on the data screen
 	case SCREEN_SCD4X_MENU:
-		//todo: use a modded version of menu move down that accounts for sub menus
+		scd4x_menu_move_down();
 		break;
 	case SCREEN_BMX280: // fall through and return to main.
 	case SCREEN_QMC5883L: // fall through and return to main.
@@ -1085,11 +1304,13 @@ void app_handle_down_button(void) {
 		return_to_main();
 		break;
 	}
+
 }
 
 
 void app_handle_left_button(void)
 {
+
 	switch (app.current_screen) {
 	case SCREEN_MAIN_MENU:
 		//menu_move_down();
@@ -1102,7 +1323,8 @@ void app_handle_left_button(void)
 		break;
 
 	case SCREEN_BLINK:
-	case SCREEN_SCD4X_DATA: // fall through and return to main.
+		break;
+	case SCREEN_SCD4X_DATA:
 		app.current_screen = SCREEN_SCD4X_MENU;
 		scd4x_menu_screen_init();
 		scd4x_menu_screen_draw();
@@ -1116,6 +1338,7 @@ void app_handle_left_button(void)
 		return_to_main();
 		break;
 	}
+
 }
 
 
@@ -1172,6 +1395,7 @@ static void app_update_qmc5883L(void)
                 //SCD4X_init(&app.scd4x, app.I2C_handle);
             }
         }
+
     }
 
 }
@@ -1258,8 +1482,9 @@ void app_init(GPIO_TypeDef *led_port, uint16_t led_pin, I2C_HandleTypeDef *hi2c_
 	app.led_mode = LED_MODE_OFF;
 	app.led_pin = led_pin;
 	app.led_port = led_port;
-	app.graph_mutex = NULL;
 
+	app.graph_mutex = NULL;
+	app.i2c1_mutex = NULL;
 
 
 	//DO NOT PUSH TO BUFFER UNLESS IT HAS INIT
@@ -1374,76 +1599,6 @@ static void render_scd4x_graph_display_co2(OLED_Handle_t *tgt_OLED)
     OLED_flush_framebuffer(tgt_OLED);
 }
 
-static void render_scd4x_graph_display_temp(OLED_Handle_t *tgt_OLED)
-{
-    char line[32];
-
-    OLED_clear_framebuffer(tgt_OLED);
-
-    OLED_draw_text_fb(tgt_OLED, 0, 0, "SCD40 Temperature");
-
-    if (app.scd4x.data.valid)
-    {
-    	snprintf(line, sizeof(line),
-    	         "%.1f C",
-    	         app.scd4x.data.temperature_c);
-    }
-    else
-    {
-        snprintf(line, sizeof(line), "Waiting...");
-    }
-
-    OLED_draw_text_fb(tgt_OLED, 0, 10, line);
-
-    OLED_draw_graph_fb(tgt_OLED,
-                       &app.temperature_graph,
-                       0,
-                       24,
-                       128,
-                       40,
-                       15.0f,
-                       35.0f);
-
-    OLED_flush_framebuffer(tgt_OLED);
-}
-
-
-
-
-
-
-static void render_scd4x_graph_display_rh(OLED_Handle_t *tgt_OLED)
-{
-    char line[32];
-
-    OLED_clear_framebuffer(tgt_OLED);
-
-    OLED_draw_text_fb(tgt_OLED, 0, 0, "SCD40 Humidity");
-
-    if (app.scd4x.data.valid)
-    {
-    	snprintf(line, sizeof(line),
-    	         "%.1f %%RH",
-    	         app.scd4x.data.humidity_rh);
-    }
-    else
-    {
-        snprintf(line, sizeof(line), "Waiting...");
-    }
-
-    OLED_draw_text_fb(tgt_OLED, 0, 10, line);
-
-    OLED_draw_graph_fb(tgt_OLED,
-                       &app.humidity_graph,
-                       0,
-                       24,
-                       128,
-                       40,
-                       0.0f,
-                       100.0f);
-
-    OLED_flush_framebuffer(tgt_OLED);
-}
 
 void app_update_graph_displays(void)
 {
@@ -1454,18 +1609,18 @@ void app_update_graph_displays(void)
     if (now - last_scd_draw_ms >= 1000)
     {
         last_scd_draw_ms = now;
-        if (app.graph_mutex != NULL)
-        {
-            osMutexAcquire(app.graph_mutex, osWaitForever);
-        }
+        //if (app.graph_mutex != NULL)
+        //{
+        //    osMutexAcquire(app.graph_mutex, osWaitForever);
+        //}
 
 			render_scd4x_graph_display_co2(&app.OLED_graph_1);
 			render_scd4x_graph_display_temp(&app.OLED_graph_2);
 
-        if (app.graph_mutex != NULL)
-        {
-            osMutexRelease(app.graph_mutex);
-        }
+        //if (app.graph_mutex != NULL)
+        //{
+        //    osMutexRelease(app.graph_mutex);
+        //}
     }
 
 }

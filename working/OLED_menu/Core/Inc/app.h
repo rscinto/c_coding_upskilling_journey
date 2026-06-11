@@ -35,7 +35,10 @@ void app_update(void);
 void app_update_LED(void);
 void app_serial_update(void);
 void app_update_sensors(void);
-void app_create_rtos_objects(void);
+
+void app_create_rtos_objects(osMutexId_t i2c1_mutex);
+void app_i2c1_lock(void);
+void app_i2c1_unlock(void);
 
 void app_update_graph_displays(void);
 
