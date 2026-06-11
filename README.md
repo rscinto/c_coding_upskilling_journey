@@ -7,19 +7,19 @@ The goal is not just to learn syntax, but to understand how computers actually w
 
 <!-- CLOC-START -->
 ```text
-cloc stats (06/10/2026)
-github.com/AlDanial/cloc v 1.98  T=0.02 s (1357.5 files/s, 267210.0 lines/s)
+cloc stats (06/11/2026)
+github.com/AlDanial/cloc v 1.98  T=0.02 s (1410.2 files/s, 285858.4 lines/s)
 -------------------------------------------------------------------------------
 Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
-C                               18           1243            854           3181
-C/C++ Header                     9            164            139            352
+C                               18           1317            863           3277
+C/C++ Header                     9            165            139            354
 Markdown                         1             20              2             62
 YAML                             1             11              0             40
 Python                           1              5             14             13
 Text                             1              0              0              2
 -------------------------------------------------------------------------------
-SUM:                            31           1443           1009           3650
+SUM:                            31           1518           1018           3748
 -------------------------------------------------------------------------------
 ```
 <!-- CLOC-END -->
