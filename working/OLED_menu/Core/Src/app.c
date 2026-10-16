@@ -198,7 +198,7 @@ void app_create_rtos_objects(osMutexId_t i2c1_mutex)
 {
     if (app.i2c1_mutex != NULL)
     {
-        osStatus_t status = osMutexAcquire(app.i2c1_mutex, 100);
+        osStatus_t status = osMutexAcquire(app.i2c1_mutex, 1000);
 
         if (status != osOK)
         {
@@ -503,14 +503,14 @@ static void format_c02(char *buffer, size_t size)
 static const char *scd4x_menu_labels[SUB_MENU_ITEM_COUNT_SCD] =
 {
     "SCD4X Data",
-    "Temp. Graph 1",
+    "Temp. Graph 1 ",
     "Humid. Graph 1",
-    "CO2 Graph 1",
-    "Temp. Graph 2",
+    "CO2 Graph 1   ",
+    "Temp. Graph 2 ",
     "Humid. Graph 2",
-    "CO2 Graph 2",
-    "Sensitivity",
-    "Refresh Rate"
+    "CO2 Graph 2   ",
+    "Sensitivity   ",
+    "Refresh Rate  "
 };
 
 
@@ -990,15 +990,15 @@ static void menu_select() {
 			app.current_screen = SCREEN_ABOUT;
 			OLED_clear(&app.OLED_main);
 			OLED_set_cursor(&app.OLED_main,0, 0);
-			OLED_print(&app.OLED_main,"Sunsets are red,");
+			OLED_print(&app.OLED_main,"Rocco");
 			OLED_set_cursor(&app.OLED_main,1, 0);
-			OLED_print(&app.OLED_main,"Oceans are blue,");
+			OLED_print(&app.OLED_main,"Firmware");
 			OLED_set_cursor(&app.OLED_main,2, 0);
-			OLED_print(&app.OLED_main,"There is no river,");
+			OLED_print(&app.OLED_main,"Engineer");
 			OLED_set_cursor(&app.OLED_main,3, 0);
-			OLED_print(&app.OLED_main,"That is stronger ");
+			OLED_print(&app.OLED_main," ");
 			OLED_set_cursor(&app.OLED_main,4, 0);
-			OLED_print(&app.OLED_main,"  than you");
+			OLED_print(&app.OLED_main,"");
 			OLED_set_cursor(&app.OLED_main,5, 0);
 			OLED_print(&app.OLED_main,"");
 
@@ -1614,8 +1614,9 @@ void app_update_graph_displays(void)
         //    osMutexAcquire(app.graph_mutex, osWaitForever);
         //}
 
-			render_scd4x_graph_display_co2(&app.OLED_graph_1);
-			render_scd4x_graph_display_temp(&app.OLED_graph_2);
+			//render_scd4x_graph_display_co2(&app.OLED_graph_1);
+			render_scd4x_graph_display_rh(&app.OLED_graph_2);
+			render_scd4x_graph_display_temp(&app.OLED_graph_1);
 
         //if (app.graph_mutex != NULL)
         //{

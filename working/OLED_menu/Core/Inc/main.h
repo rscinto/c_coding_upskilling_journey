@@ -57,18 +57,23 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define Button1_Pin_Pin GPIO_PIN_13
-#define Button1_Pin_GPIO_Port GPIOC
-#define Button1_Pin_EXTI_IRQn EXTI15_10_IRQn
-#define external_button_Pin GPIO_PIN_0
-#define external_button_GPIO_Port GPIOA
-#define external_button_EXTI_IRQn EXTI0_IRQn
-#define USART_TX_Pin GPIO_PIN_2
-#define USART_TX_GPIO_Port GPIOA
-#define USART_RX_Pin GPIO_PIN_3
-#define USART_RX_GPIO_Port GPIOA
+#define button_left_Pin GPIO_PIN_1
+#define button_left_GPIO_Port GPIOC
+#define button_left_EXTI_IRQn EXTI1_IRQn
+#define button_up_Pin GPIO_PIN_3
+#define button_up_GPIO_Port GPIOC
+#define button_up_EXTI_IRQn EXTI3_IRQn
+#define button_select_Pin GPIO_PIN_0
+#define button_select_GPIO_Port GPIOA
+#define button_select_EXTI_IRQn EXTI0_IRQn
+#define button_down_Pin GPIO_PIN_4
+#define button_down_GPIO_Port GPIOA
+#define button_down_EXTI_IRQn EXTI4_IRQn
 #define LD2_Pin GPIO_PIN_5
 #define LD2_GPIO_Port GPIOA
+#define button_right_Pin GPIO_PIN_6
+#define button_right_GPIO_Port GPIOA
+#define button_right_EXTI_IRQn EXTI9_5_IRQn
 #define TMS_Pin GPIO_PIN_13
 #define TMS_GPIO_Port GPIOA
 #define TCK_Pin GPIO_PIN_14
